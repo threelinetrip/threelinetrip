@@ -1,73 +1,165 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
-import { MapPin, Star, Sparkles, ArrowLeft, Share2, Check, X, ZoomIn } from "lucide-react";
+import {
+  MapPin, Star, Sparkles, ArrowLeft,
+  Share2, Check, X, ZoomIn, ChevronLeft, ChevronRight,
+} from "lucide-react";
 import { Swiper, SwiperSlide } from "swiper/react";
 import { Navigation, Pagination } from "swiper/modules";
+import type { Swiper as SwiperInstance } from "swiper";
 import "swiper/css";
 import "swiper/css/navigation";
 import "swiper/css/pagination";
 import { fetchDestinationById, insertViewLog } from "@/lib/supabase";
 import type { Destination } from "@/lib/db/schema";
 
-/** 라이트박스 모달 */
-function Lightbox({ url, onClose }: { url: string; onClose: () => void }) {
+// ─────────────────────────────────────────────
+// 라이트박스 (Swiper 기반)
+// ─────────────────────────────────────────────
+interface LightboxProps {
+  images: string[];
+  initialIdx: number;
+  title: string;
+  onClose: () => void;
+}
+
+function Lightbox({ images, initialIdx, title, onClose }: LightboxProps) {
+  const swiperRef = useRef<SwiperInstance | null>(null);
+  const [currentIdx, setCurrentIdx] = useState(initialIdx);
+  const multi = images.length > 1;
+
+  // Esc / 방향키 지원 + body 스크롤 잠금
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
+    const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
+      if (e.key === "ArrowLeft")  swiperRef.current?.slidePrev();
+      if (e.key === "ArrowRight") swiperRef.current?.slideNext();
     };
-    document.addEventListener("keydown", handler);
-    // 스크롤 잠금
+    document.addEventListener("keydown", onKey);
     document.body.style.overflow = "hidden";
     return () => {
-      document.removeEventListener("keydown", handler);
+      document.removeEventListener("keydown", onKey);
       document.body.style.overflow = "";
     };
   }, [onClose]);
 
   return (
+    /* 배경 클릭으로 닫기 */
     <div
-      className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 bg-black/95 flex flex-col select-none"
       onClick={onClose}
     >
-      {/* 닫기 버튼 */}
-      <button
-        type="button"
-        onClick={onClose}
-        className="absolute top-4 right-4 z-10 flex items-center justify-center w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors"
-        aria-label="닫기"
-      >
-        <X className="w-5 h-5" />
-      </button>
-
-      {/* 이미지 — 클릭 이벤트 버블링 차단 */}
+      {/* 상단 바 ── 닫기 버튼 & 카운터 */}
       <div
-        className="relative flex items-center justify-center max-w-5xl max-h-[90vh] w-full h-full"
+        className="flex items-center justify-between px-4 h-14 shrink-0"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={url}
-          alt="이미지 확대 보기"
-          className="max-h-[90vh] max-w-full w-auto h-auto object-contain rounded-lg shadow-2xl"
-        />
+        {multi ? (
+          <span className="text-white/60 text-sm tabular-nums font-medium">
+            {currentIdx + 1} / {images.length}
+          </span>
+        ) : (
+          <span />
+        )}
+        <button
+          type="button"
+          onClick={onClose}
+          className="flex items-center justify-center w-9 h-9 rounded-full text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+          aria-label="닫기"
+        >
+          <X className="w-5 h-5" />
+        </button>
       </div>
+
+      {/* 슬라이더 */}
+      <div
+        className="relative flex-1 min-h-0"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <Swiper
+          // 터치·스와이프는 Swiper 기본 지원 — 별도 모듈 불필요
+          initialSlide={initialIdx}
+          loop={multi}
+          grabCursor
+          speed={320}
+          onSwiper={(s) => { swiperRef.current = s; }}
+          onSlideChange={(s) => setCurrentIdx(s.realIndex)}
+          className="h-full w-full"
+        >
+          {images.map((url, i) => (
+            <SwiperSlide key={i}>
+              <div className="relative w-full h-full">
+                {url.startsWith("data:") ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={url}
+                    alt={`${title} ${i + 1}`}
+                    className="w-full h-full object-contain"
+                  />
+                ) : (
+                  <Image
+                    src={url}
+                    alt={`${title} ${i + 1}`}
+                    fill
+                    className="object-contain"
+                    sizes="100vw"
+                    priority={i === initialIdx}
+                  />
+                )}
+              </div>
+            </SwiperSlide>
+          ))}
+        </Swiper>
+
+        {/* 좌우 화살표 — 이미지 2장 이상일 때만 표시 */}
+        {multi && (
+          <>
+            <button
+              type="button"
+              onClick={() => swiperRef.current?.slidePrev()}
+              className="absolute left-2 sm:left-4 top-1/2 -translate-y-1/2 z-10
+                         flex items-center justify-center w-10 h-10 rounded-full
+                         bg-black/40 hover:bg-black/65 text-white transition-colors"
+              aria-label="이전 이미지"
+            >
+              <ChevronLeft className="w-6 h-6" />
+            </button>
+            <button
+              type="button"
+              onClick={() => swiperRef.current?.slideNext()}
+              className="absolute right-2 sm:right-4 top-1/2 -translate-y-1/2 z-10
+                         flex items-center justify-center w-10 h-10 rounded-full
+                         bg-black/40 hover:bg-black/65 text-white transition-colors"
+              aria-label="다음 이미지"
+            >
+              <ChevronRight className="w-6 h-6" />
+            </button>
+          </>
+        )}
+      </div>
+
+      {/* 하단 여백 */}
+      <div className="h-4 shrink-0" />
     </div>
   );
 }
 
+// ─────────────────────────────────────────────
+// 상세 페이지
+// ─────────────────────────────────────────────
 export default function DestinationDetailPage() {
   const params = useParams();
   const id = params.id as string;
 
   const [destination, setDestination] = useState<Destination | undefined>(undefined);
   const [shared, setShared] = useState(false);
-  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+  const [lightboxIdx, setLightboxIdx] = useState<number | null>(null);
 
-  const closeLightbox = useCallback(() => setLightboxUrl(null), []);
+  const closeLightbox = useCallback(() => setLightboxIdx(null), []);
 
   const handleShare = async () => {
     const url = typeof window !== "undefined" ? window.location.href : "";
@@ -114,22 +206,21 @@ export default function DestinationDetailPage() {
     <main className="min-h-screen bg-white">
       <div className="max-w-2xl mx-auto px-4 py-8">
 
-        {/* Swiper 이미지 슬라이더 */}
+        {/* 메인 슬라이더 */}
         <div className="rounded-xl overflow-hidden mb-6 bg-slate-100">
           {images.length > 0 ? (
             <Swiper
               modules={[Navigation, Pagination]}
-              navigation
-              pagination={{ clickable: true }}
+              navigation={images.length > 1}
+              pagination={images.length > 1 ? { clickable: true } : false}
               loop={images.length > 1}
               className="aspect-[4/3] w-full"
             >
               {images.map((url, i) => (
                 <SwiperSlide key={i}>
-                  {/* 클릭 시 라이트박스 오픈 */}
                   <div
                     className="relative w-full h-full bg-slate-100 cursor-zoom-in group"
-                    onClick={() => setLightboxUrl(url)}
+                    onClick={() => setLightboxIdx(i)}
                   >
                     {url.startsWith("data:") ? (
                       // eslint-disable-next-line @next/next/no-img-element
@@ -148,8 +239,9 @@ export default function DestinationDetailPage() {
                         priority={i === 0}
                       />
                     )}
-                    {/* 확대 힌트 아이콘 */}
-                    <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                    {/* 확대 힌트 */}
+                    <div className="absolute inset-0 flex items-center justify-center
+                                    opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
                       <div className="bg-black/40 rounded-full p-2">
                         <ZoomIn className="w-5 h-5 text-white" />
                       </div>
@@ -233,7 +325,14 @@ export default function DestinationDetailPage() {
       </div>
 
       {/* 라이트박스 */}
-      {lightboxUrl && <Lightbox url={lightboxUrl} onClose={closeLightbox} />}
+      {lightboxIdx !== null && (
+        <Lightbox
+          images={images}
+          initialIdx={lightboxIdx}
+          title={destination.title}
+          onClose={closeLightbox}
+        />
+      )}
     </main>
   );
 }
