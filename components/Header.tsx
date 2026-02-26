@@ -54,10 +54,10 @@ export default function Header() {
           <Image
             src="/logo.png?v=1"
             alt="세줄여행"
-            width={32}
-            height={32}
+            width={120}
+            height={40}
             priority
-            className="object-contain"
+            className="h-10 w-auto object-contain"
           />
           <span className="text-lg font-semibold tracking-tight text-slate-800 leading-none">
             세줄여행
