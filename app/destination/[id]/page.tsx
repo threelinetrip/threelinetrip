@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
-import { MapPin, Star, Sparkles, ArrowLeft, Share2, Check } from "lucide-react";
+import { MapPin, Star, Sparkles, ArrowLeft, Share2, Check, X, ZoomIn } from "lucide-react";
 import { Swiper, SwiperSlide } from "swiper/react";
 import { Navigation, Pagination } from "swiper/modules";
 import "swiper/css";
@@ -13,12 +13,61 @@ import "swiper/css/pagination";
 import { fetchDestinationById, insertViewLog } from "@/lib/supabase";
 import type { Destination } from "@/lib/db/schema";
 
+/** 라이트박스 모달 */
+function Lightbox({ url, onClose }: { url: string; onClose: () => void }) {
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", handler);
+    // 스크롤 잠금
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", handler);
+      document.body.style.overflow = "";
+    };
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      {/* 닫기 버튼 */}
+      <button
+        type="button"
+        onClick={onClose}
+        className="absolute top-4 right-4 z-10 flex items-center justify-center w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors"
+        aria-label="닫기"
+      >
+        <X className="w-5 h-5" />
+      </button>
+
+      {/* 이미지 — 클릭 이벤트 버블링 차단 */}
+      <div
+        className="relative flex items-center justify-center max-w-5xl max-h-[90vh] w-full h-full"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={url}
+          alt="이미지 확대 보기"
+          className="max-h-[90vh] max-w-full w-auto h-auto object-contain rounded-lg shadow-2xl"
+        />
+      </div>
+    </div>
+  );
+}
+
 export default function DestinationDetailPage() {
   const params = useParams();
   const id = params.id as string;
 
   const [destination, setDestination] = useState<Destination | undefined>(undefined);
   const [shared, setShared] = useState(false);
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+
+  const closeLightbox = useCallback(() => setLightboxUrl(null), []);
 
   const handleShare = async () => {
     const url = typeof window !== "undefined" ? window.location.href : "";
@@ -34,7 +83,6 @@ export default function DestinationDetailPage() {
     } catch {
       // 공유 취소 시 무시
     }
-    // 공유 로그 기록 (fire-and-forget)
     insertViewLog(id, "share");
   };
 
@@ -42,14 +90,10 @@ export default function DestinationDetailPage() {
     fetchDestinationById(id)
       .then((d) => setDestination(d ?? undefined))
       .catch(() => setDestination(undefined));
-
-    // 조회 로그 기록 (fire-and-forget — 실패해도 페이지에 영향 없음)
     insertViewLog(id);
   }, [id]);
 
   const summaryLines = destination?.summary?.split("\n").filter(Boolean) ?? [];
-
-  // imageUrls[0]이 대표 이미지, 전체를 슬라이드로 표시
   const images: string[] = destination?.imageUrls ?? [];
 
   if (!destination) {
@@ -69,8 +113,9 @@ export default function DestinationDetailPage() {
   return (
     <main className="min-h-screen bg-white">
       <div className="max-w-2xl mx-auto px-4 py-8">
+
         {/* Swiper 이미지 슬라이더 */}
-        <div className="rounded-xl overflow-hidden mb-6">
+        <div className="rounded-xl overflow-hidden mb-6 bg-slate-100">
           {images.length > 0 ? (
             <Swiper
               modules={[Navigation, Pagination]}
@@ -81,19 +126,34 @@ export default function DestinationDetailPage() {
             >
               {images.map((url, i) => (
                 <SwiperSlide key={i}>
-                  <div className="relative w-full h-full">
+                  {/* 클릭 시 라이트박스 오픈 */}
+                  <div
+                    className="relative w-full h-full bg-slate-100 cursor-zoom-in group"
+                    onClick={() => setLightboxUrl(url)}
+                  >
                     {url.startsWith("data:") ? (
-                      <img src={url} alt={`${destination.title} ${i + 1}`} className="w-full h-full object-cover" />
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={url}
+                        alt={`${destination.title} ${i + 1}`}
+                        className="w-full h-full object-contain"
+                      />
                     ) : (
                       <Image
                         src={url}
                         alt={`${destination.title} ${i + 1}`}
                         fill
-                        className="object-cover"
+                        className="object-contain"
                         sizes="(max-width: 672px) 100vw, 672px"
                         priority={i === 0}
                       />
                     )}
+                    {/* 확대 힌트 아이콘 */}
+                    <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="bg-black/40 rounded-full p-2">
+                        <ZoomIn className="w-5 h-5 text-white" />
+                      </div>
+                    </div>
                   </div>
                 </SwiperSlide>
               ))}
@@ -164,19 +224,16 @@ export default function DestinationDetailPage() {
             }`}
           >
             {shared ? (
-              <>
-                <Check className="w-4 h-4" />
-                링크 복사됨
-              </>
+              <><Check className="w-4 h-4" />링크 복사됨</>
             ) : (
-              <>
-                <Share2 className="w-4 h-4" />
-                공유하기
-              </>
+              <><Share2 className="w-4 h-4" />공유하기</>
             )}
           </button>
         </div>
       </div>
+
+      {/* 라이트박스 */}
+      {lightboxUrl && <Lightbox url={lightboxUrl} onClose={closeLightbox} />}
     </main>
   );
 }

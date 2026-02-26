@@ -30,15 +30,16 @@ function DestinationCard({ item }: { item: Destination }) {
   const thumb = item.imageUrls?.[0];
   return (
     <Link href={`/destination/${item.id}`} className="block group">
-      <article className="h-full bg-white rounded-xl overflow-hidden border border-slate-100 hover:border-slate-200 hover:shadow-lg hover:-translate-y-1 transition-all duration-300 ease-out">
-        <div className="relative aspect-[3/4] overflow-hidden bg-slate-100">
+      <article className="h-full bg-white rounded-xl overflow-hidden border border-slate-100 hover:border-slate-200 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 ease-out">
+        {/* 이미지: 4:3 비율, 전체 보기(object-contain) */}
+        <div className="relative aspect-[4/3] overflow-hidden bg-slate-100">
           {thumb ? (
             <Image
               src={thumb}
               alt={item.title}
               fill
-              className="object-cover group-hover:scale-105 transition-transform duration-500"
-              sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, (max-width: 1280px) 33vw, 25vw"
+              className="object-contain"
+              sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-slate-400 text-sm">
@@ -46,13 +47,13 @@ function DestinationCard({ item }: { item: Destination }) {
             </div>
           )}
         </div>
-        <div className="p-4">
-          <div className="flex items-center justify-between gap-2 mb-1.5">
-            <h2 className="font-semibold text-base text-slate-800 line-clamp-1">{item.title}</h2>
+        <div className="p-3">
+          <div className="flex items-center justify-between gap-2 mb-1">
+            <h2 className="font-semibold text-sm text-slate-800 line-clamp-1">{item.title}</h2>
             <StarRating rating={item.rating} />
           </div>
-          <div className="flex items-center gap-1.5 text-slate-500 text-sm">
-            <MapPin className="w-3.5 h-3.5 shrink-0" />
+          <div className="flex items-center gap-1.5 text-slate-500 text-xs">
+            <MapPin className="w-3 h-3 shrink-0" />
             <span className="line-clamp-1">{item.sido} {item.sigungu}</span>
           </div>
         </div>
@@ -180,8 +181,8 @@ export default function Home() {
       </div>
 
       {/* 카드 그리드 */}
-      <section className="max-w-6xl mx-auto px-4 sm:px-6 py-12">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
+      <section className="max-w-6xl mx-auto px-4 sm:px-6 py-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredAndSorted.map((item) => (
             <DestinationCard key={item.id} item={item} />
           ))}
