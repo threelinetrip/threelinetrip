@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
-import { MapPin, Star, Sparkles, ArrowLeft } from "lucide-react";
+import { MapPin, Star, Sparkles, ArrowLeft, Share2, Check } from "lucide-react";
 import { Swiper, SwiperSlide } from "swiper/react";
 import { Navigation, Pagination } from "swiper/modules";
 import "swiper/css";
@@ -18,6 +18,25 @@ export default function DestinationDetailPage() {
   const id = params.id as string;
 
   const [destination, setDestination] = useState<Destination | undefined>(undefined);
+  const [shared, setShared] = useState(false);
+
+  const handleShare = async () => {
+    const url = typeof window !== "undefined" ? window.location.href : "";
+    const title = destination?.title ?? "세줄여행";
+    try {
+      if (navigator.share) {
+        await navigator.share({ title, url });
+      } else {
+        await navigator.clipboard.writeText(url);
+        setShared(true);
+        setTimeout(() => setShared(false), 2000);
+      }
+    } catch {
+      // 공유 취소 시 무시
+    }
+    // 공유 로그 기록 (fire-and-forget)
+    insertViewLog(id, "share");
+  };
 
   useEffect(() => {
     fetchDestinationById(id)
@@ -127,7 +146,7 @@ export default function DestinationDetailPage() {
         </div>
 
         {/* 하단 버튼 */}
-        <div className="flex justify-center">
+        <div className="flex items-center justify-center gap-3">
           <Link
             href="/"
             className="inline-flex items-center gap-2 px-6 py-3 bg-slate-900 text-white font-medium rounded-lg hover:bg-slate-800 transition-colors"
@@ -135,6 +154,27 @@ export default function DestinationDetailPage() {
             <ArrowLeft className="w-4 h-4" />
             목록으로 돌아가기
           </Link>
+          <button
+            type="button"
+            onClick={handleShare}
+            className={`inline-flex items-center gap-2 px-6 py-3 font-medium rounded-lg border transition-colors ${
+              shared
+                ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+                : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
+            }`}
+          >
+            {shared ? (
+              <>
+                <Check className="w-4 h-4" />
+                링크 복사됨
+              </>
+            ) : (
+              <>
+                <Share2 className="w-4 h-4" />
+                공유하기
+              </>
+            )}
+          </button>
         </div>
       </div>
     </main>

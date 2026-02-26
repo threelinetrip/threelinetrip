@@ -139,24 +139,92 @@ export async function deleteDestinationById(id: string): Promise<void> {
 }
 
 /**
- * 페이지 조회 로그 기록 (fire-and-forget)
+ * 페이지 조회·공유 로그 기록 (fire-and-forget)
+ * - eventType: 'view'(기본) | 'share'
  * - 상세 페이지: destinationId에 UUID 전달
  * - 메인 페이지:  destinationId에 null 전달
- * 실패해도 사용자 경험에 영향 없도록 에러를 조용히 무시합니다.
  */
-export async function insertViewLog(destinationId: string | null): Promise<void> {
+export async function insertViewLog(
+  destinationId: string | null,
+  eventType: "view" | "share" = "view"
+): Promise<void> {
   const userAgent =
     typeof navigator !== "undefined" ? navigator.userAgent : "";
   const referrer =
     typeof document !== "undefined" ? document.referrer : "";
 
   const { error } = await supabase.from("view_logs").insert({
-    destination_id: destinationId,   // null 허용 (메인 페이지)
+    destination_id: destinationId,
     user_agent: userAgent,
     referrer: referrer,
+    event_type: eventType,
   });
 
   if (error) {
     console.warn("[view_log 기록 실패]", toErrorMessage(error));
   }
+}
+
+// ──────────────────────────────────────────────
+// 관리자 대시보드 통계
+// ──────────────────────────────────────────────
+
+export interface DashboardStats {
+  /** event_type='view' 전체 건수 */
+  totalViews: number;
+  /** event_type='share' 전체 건수 */
+  totalShares: number;
+  /** destination_id IS NULL (메인 페이지 방문) */
+  mainPageViews: number;
+  /** destination_id IS NOT NULL (상세 페이지 조회) */
+  detailPageViews: number;
+  /** 게시글별 { views, shares } 맵 */
+  destStats: Record<string, { views: number; shares: number }>;
+}
+
+export async function fetchDashboardStats(): Promise<DashboardStats> {
+  const [totalViewsRes, totalSharesRes, mainRes, detailRes, destRes] =
+    await Promise.all([
+      supabase
+        .from("view_logs")
+        .select("*", { count: "exact", head: true })
+        .eq("event_type", "view"),
+      supabase
+        .from("view_logs")
+        .select("*", { count: "exact", head: true })
+        .eq("event_type", "share"),
+      supabase
+        .from("view_logs")
+        .select("*", { count: "exact", head: true })
+        .eq("event_type", "view")
+        .is("destination_id", null),
+      supabase
+        .from("view_logs")
+        .select("*", { count: "exact", head: true })
+        .eq("event_type", "view")
+        .not("destination_id", "is", null),
+      supabase.rpc("get_destination_stats"),
+    ]);
+
+  const destStats: Record<string, { views: number; shares: number }> = {};
+  if (destRes.data) {
+    for (const row of destRes.data as Array<{
+      destination_id: string;
+      view_count: number;
+      share_count: number;
+    }>) {
+      destStats[row.destination_id] = {
+        views: Number(row.view_count),
+        shares: Number(row.share_count),
+      };
+    }
+  }
+
+  return {
+    totalViews: totalViewsRes.count ?? 0,
+    totalShares: totalSharesRes.count ?? 0,
+    mainPageViews: mainRes.count ?? 0,
+    detailPageViews: detailRes.count ?? 0,
+    destStats,
+  };
 }

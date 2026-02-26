@@ -2,11 +2,13 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { Pencil, Trash2, MapPin, ArrowUp, ArrowDown, Eye } from "lucide-react";
+import { Pencil, Trash2, MapPin, ArrowUp, ArrowDown, Eye, Share2, Users, Home, TrendingUp } from "lucide-react";
 import { REGIONS } from "@/constants/regions";
 import {
   fetchAllDestinations,
   deleteDestinationById,
+  fetchDashboardStats,
+  type DashboardStats,
 } from "@/lib/supabase";
 import type { Destination } from "@/lib/db/schema";
 
@@ -27,6 +29,7 @@ function formatDate(iso: string | undefined) {
 
 export default function AdminDashboardPage() {
   const [items, setItems] = useState<Destination[]>([]);
+  const [stats, setStats] = useState<DashboardStats | null>(null);
   const [sidoFilter, setSidoFilter] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("createdAt");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
@@ -42,6 +45,9 @@ export default function AdminDashboardPage() {
 
   useEffect(() => {
     loadItems();
+    fetchDashboardStats()
+      .then(setStats)
+      .catch(() => setStats(null));
   }, [loadItems]);
 
   const handleSort = (key: SortKey) => {
@@ -83,11 +89,62 @@ export default function AdminDashboardPage() {
     }
   };
 
+  const STAT_CARDS = [
+    {
+      label: "전체 방문",
+      value: stats?.totalViews ?? "-",
+      icon: Users,
+      color: "bg-blue-50 text-blue-600",
+      border: "border-blue-100",
+    },
+    {
+      label: "게시글 조회",
+      value: stats?.detailPageViews ?? "-",
+      icon: TrendingUp,
+      color: "bg-emerald-50 text-emerald-600",
+      border: "border-emerald-100",
+    },
+    {
+      label: "공유 횟수",
+      value: stats?.totalShares ?? "-",
+      icon: Share2,
+      color: "bg-purple-50 text-purple-600",
+      border: "border-purple-100",
+    },
+    {
+      label: "메인 방문",
+      value: stats?.mainPageViews ?? "-",
+      icon: Home,
+      color: "bg-amber-50 text-amber-600",
+      border: "border-amber-100",
+    },
+  ];
+
   return (
     <div className="max-w-5xl mx-auto px-4 py-8">
       <h1 className="text-xl font-semibold text-slate-800 mb-6">
         게시글 관리
       </h1>
+
+      {/* 통계 카드 */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
+        {STAT_CARDS.map(({ label, value, icon: Icon, color, border }) => (
+          <div
+            key={label}
+            className={`rounded-xl border ${border} bg-white p-4 flex items-center gap-3`}
+          >
+            <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${color}`}>
+              <Icon className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="text-xs text-slate-500 mb-0.5">{label}</p>
+              <p className="text-xl font-bold text-slate-800 leading-none">
+                {typeof value === "number" ? value.toLocaleString() : value}
+              </p>
+            </div>
+          </div>
+        ))}
+      </div>
 
       {/* 필터 (정렬은 테이블 헤더 클릭으로 동작) */}
       <div className="flex flex-col sm:flex-row gap-4 mb-6">
@@ -191,6 +248,9 @@ export default function AdminDashboardPage() {
                         ))}
                     </span>
                   </th>
+                  <th className="text-left py-3 px-4 font-medium text-slate-700 w-28">
+                    조회 / 공유
+                  </th>
                   <th className="text-right py-3 px-4 font-medium text-slate-700 w-40">
                     작업
                   </th>
@@ -217,6 +277,17 @@ export default function AdminDashboardPage() {
                       {formatDate(row.createdAt)}
                     </td>
                     <td className="py-3 px-4 text-slate-700">{row.rating}점</td>
+                    <td className="py-3 px-4">
+                      <span className="inline-flex items-center gap-1 text-sm text-slate-500">
+                        <Eye className="w-3.5 h-3.5" />
+                        {(stats?.destStats[row.id]?.views ?? 0).toLocaleString()}
+                      </span>
+                      <span className="mx-1 text-slate-300">/</span>
+                      <span className="inline-flex items-center gap-1 text-sm text-slate-500">
+                        <Share2 className="w-3.5 h-3.5" />
+                        {(stats?.destStats[row.id]?.shares ?? 0).toLocaleString()}
+                      </span>
+                    </td>
                     <td className="py-3 px-4 text-right">
                       <div className="flex justify-end gap-2">
                         <Link
