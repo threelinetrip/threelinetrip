@@ -9,9 +9,10 @@ const notoSansKR = Noto_Sans_KR({
   variable: "--font-noto-sans-kr",
 });
 
+const SITE_URL = "https://www.thlt.kr";
 const TITLE = "세줄여행 - 세 줄로 만나는 여행지";
 const DESCRIPTION = "세 줄로 기록되는 여행지 정보를 확인하세요!";
-const OG_IMAGE = "/og-image.png";
+const OG_IMAGE = `${SITE_URL}/og-image.png`;
 
 export const viewport: Viewport = {
   width: "device-width",
@@ -20,6 +21,8 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
+  // 상대 경로를 절대 경로로 자동 변환하는 기준 URL
+  metadataBase: new URL(SITE_URL),
   title: {
     default: TITLE,
     template: "%s | 세줄여행",
@@ -30,13 +33,13 @@ export const metadata: Metadata = {
   openGraph: {
     type: "website",
     locale: "ko_KR",
-    url: "https://threelinetrip.com",
+    url: SITE_URL,
     siteName: "세줄여행",
     title: TITLE,
     description: DESCRIPTION,
     images: [
       {
-        url: OG_IMAGE,
+        url: OG_IMAGE,           // https://www.thlt.kr/og-image.png
         width: 1200,
         height: 630,
         alt: TITLE,
