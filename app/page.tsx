@@ -12,16 +12,16 @@ import type { Destination } from "@/lib/db/schema";
 function StarRating({ rating }: { rating: number }) {
   const fullStars = Math.floor(rating);
   return (
-    <div className="flex items-center gap-0.5 shrink-0">
+    <div className="flex items-center gap-px shrink-0">
       {[1, 2, 3, 4, 5].map((i) => (
         <Star
           key={i}
-          className={`w-4 h-4 ${
+          className={`w-3 h-3 sm:w-3.5 sm:h-3.5 ${
             i <= fullStars ? "fill-amber-400 text-amber-400" : "fill-slate-200 text-slate-200"
           }`}
         />
       ))}
-      <span className="ml-1.5 text-sm font-medium text-slate-600">{rating}</span>
+      <span className="ml-1 text-xs font-medium text-slate-600">{rating}</span>
     </div>
   );
 }
@@ -30,31 +30,35 @@ function DestinationCard({ item }: { item: Destination }) {
   const thumb = item.imageUrls?.[0];
   return (
     <Link href={`/destination/${item.id}`} className="block group">
-      <article className="h-full bg-white rounded-xl overflow-hidden border border-slate-100 hover:border-slate-200 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 ease-out">
-        {/* 이미지: 4:3 비율, 전체 보기(object-contain) */}
-        <div className="relative aspect-[4/3] overflow-hidden bg-slate-100">
+      {/* flex flex-col + h-full → 모든 카드가 행 높이에 맞춰 동일하게 늘어남 */}
+      <article className="flex flex-col h-full bg-white rounded-xl overflow-hidden border border-slate-100 hover:border-slate-200 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 ease-out">
+        {/* 이미지: 4:3 고정 비율, 전체 보기 */}
+        <div className="relative aspect-[4/3] shrink-0 bg-slate-100">
           {thumb ? (
             <Image
               src={thumb}
               alt={item.title}
               fill
               className="object-contain"
-              sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+              sizes="(max-width: 1024px) 50vw, 33vw"
             />
           ) : (
-            <div className="w-full h-full flex items-center justify-center text-slate-400 text-sm">
+            <div className="w-full h-full flex items-center justify-center text-slate-400 text-xs">
               이미지 없음
             </div>
           )}
         </div>
-        <div className="p-3">
-          <div className="flex items-center justify-between gap-2 mb-1">
-            <h2 className="font-semibold text-sm text-slate-800 line-clamp-1">{item.title}</h2>
+        {/* 텍스트 영역: flex-1로 남은 공간을 채워 높이 통일 */}
+        <div className="flex flex-col justify-between flex-1 p-2.5 sm:p-3">
+          <h2 className="font-semibold text-xs sm:text-sm text-slate-800 line-clamp-2 mb-1 leading-snug">
+            {item.title}
+          </h2>
+          <div className="flex items-center justify-between gap-1">
+            <div className="flex items-center gap-1 text-slate-500 text-xs min-w-0">
+              <MapPin className="w-3 h-3 shrink-0" />
+              <span className="truncate">{item.sido} {item.sigungu}</span>
+            </div>
             <StarRating rating={item.rating} />
-          </div>
-          <div className="flex items-center gap-1.5 text-slate-500 text-xs">
-            <MapPin className="w-3 h-3 shrink-0" />
-            <span className="line-clamp-1">{item.sido} {item.sigungu}</span>
           </div>
         </div>
       </article>
@@ -181,8 +185,8 @@ export default function Home() {
       </div>
 
       {/* 카드 그리드 */}
-      <section className="max-w-6xl mx-auto px-4 sm:px-6 py-8">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      <section className="max-w-6xl mx-auto px-3 sm:px-6 py-6">
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-4">
           {filteredAndSorted.map((item) => (
             <DestinationCard key={item.id} item={item} />
           ))}
