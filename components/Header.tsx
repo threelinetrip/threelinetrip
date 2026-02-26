@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LayoutDashboard, FilePlus, LogOut, LogIn } from "lucide-react";
+import { LayoutDashboard, FilePlus, LogOut } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { isAdminEmail, signOut } from "@/lib/auth";
 import type { User } from "@supabase/supabase-js";
@@ -88,30 +88,16 @@ export default function Header() {
             <span className="w-px h-5 bg-slate-200 mx-1" aria-hidden />
           )}
 
-          {/* 로그아웃 / 로그인 버튼 */}
-          {ready && (
-            admin ? (
-              <button
-                type="button"
-                onClick={handleLogout}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-slate-500 hover:text-red-600 hover:bg-red-50 transition-colors"
-              >
-                <LogOut className="w-4 h-4" />
-                로그아웃
-              </button>
-            ) : (
-              <Link
-                href="/login"
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  isActive("/login")
-                    ? "bg-slate-100 text-slate-900"
-                    : "text-slate-500 hover:text-slate-900 hover:bg-slate-50"
-                }`}
-              >
-                <LogIn className="w-4 h-4" />
-                관리자 로그인
-              </Link>
-            )
+          {/* 관리자로 로그인된 경우에만 로그아웃 버튼 표시 */}
+          {ready && admin && (
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-slate-500 hover:text-red-600 hover:bg-red-50 transition-colors"
+            >
+              <LogOut className="w-4 h-4" />
+              로그아웃
+            </button>
           )}
         </nav>
       </div>

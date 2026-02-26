@@ -59,7 +59,7 @@ export default function LoginPage() {
             height={48}
             className="object-contain mb-3"
           />
-          <h1 className="text-xl font-semibold text-slate-800">관리자 로그인</h1>
+          <h1 className="text-xl font-semibold text-slate-800">로그인</h1>
           <p className="text-sm text-slate-500 mt-1">세줄여행 관리자 페이지</p>
         </div>
 
