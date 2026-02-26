@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { Pencil, Trash2, MapPin, ArrowUp, ArrowDown, Eye, Share2, Users, Home, TrendingUp } from "lucide-react";
+import { Pencil, Trash2, MapPin, ArrowUp, ArrowDown, Eye, Share2, Users, Home, TrendingUp, Star } from "lucide-react";
 import { REGIONS } from "@/constants/regions";
 import {
   fetchAllDestinations,
@@ -31,6 +31,7 @@ export default function AdminDashboardPage() {
   const [items, setItems] = useState<Destination[]>([]);
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [sidoFilter, setSidoFilter] = useState("");
+  const [ratingFilter, setRatingFilter] = useState(0); // 0 = 전체
   const [sortKey, setSortKey] = useState<SortKey>("createdAt");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
 
@@ -61,6 +62,7 @@ export default function AdminDashboardPage() {
 
   const filteredAndSorted = items
     .filter((d) => !sidoFilter || d.sido === sidoFilter)
+    .filter((d) => !ratingFilter || d.rating === ratingFilter)
     .sort((a, b) => {
       let cmp = 0;
       if (sortKey === "title") {
@@ -146,9 +148,10 @@ export default function AdminDashboardPage() {
         ))}
       </div>
 
-      {/* 필터 (정렬은 테이블 헤더 클릭으로 동작) */}
-      <div className="flex flex-col sm:flex-row gap-4 mb-6">
-        <div className="sm:w-64">
+      {/* 필터 */}
+      <div className="flex flex-col sm:flex-row gap-4 mb-6 flex-wrap">
+        {/* 지역 필터 */}
+        <div className="sm:w-56">
           <label className="block text-xs font-medium text-slate-500 mb-1.5">
             지역 필터
           </label>
@@ -168,6 +171,42 @@ export default function AdminDashboardPage() {
             </select>
           </div>
         </div>
+
+        {/* 별점 필터 */}
+        <div>
+          <label className="block text-xs font-medium text-slate-500 mb-1.5">
+            별점 필터
+          </label>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setRatingFilter(0)}
+              className={`px-3 py-2 text-sm rounded-lg border transition-colors ${
+                ratingFilter === 0
+                  ? "bg-amber-400 border-amber-400 text-white font-medium"
+                  : "bg-white border-slate-200 text-slate-600 hover:bg-amber-50 hover:border-amber-200"
+              }`}
+            >
+              전체
+            </button>
+            {[1, 2, 3, 4, 5].map((r) => (
+              <button
+                key={r}
+                type="button"
+                onClick={() => setRatingFilter(ratingFilter === r ? 0 : r)}
+                className={`flex items-center gap-0.5 px-2.5 py-2 text-sm rounded-lg border transition-colors ${
+                  ratingFilter === r
+                    ? "bg-amber-400 border-amber-400 text-white font-medium"
+                    : "bg-white border-slate-200 text-slate-600 hover:bg-amber-50 hover:border-amber-200"
+                }`}
+              >
+                <Star className={`w-3.5 h-3.5 ${ratingFilter === r ? "fill-white text-white" : "fill-amber-400 text-amber-400"}`} />
+                {r}
+              </button>
+            ))}
+          </div>
+        </div>
+
         <div className="flex items-end">
           <p className="text-xs text-slate-400 pb-2.5">
             테이블 헤더를 클릭하면 해당 열 기준으로 정렬됩니다.
@@ -234,19 +273,8 @@ export default function AdminDashboardPage() {
                         ))}
                     </span>
                   </th>
-                  <th
-                    onClick={() => handleSort("rating")}
-                    className="text-left py-3 px-4 font-medium text-slate-700 cursor-pointer hover:bg-slate-100 transition-colors select-none"
-                  >
-                    <span className="inline-flex items-center gap-1">
-                      평점
-                      {sortKey === "rating" &&
-                        (sortDir === "asc" ? (
-                          <ArrowUp className="w-3.5 h-3.5" />
-                        ) : (
-                          <ArrowDown className="w-3.5 h-3.5" />
-                        ))}
-                    </span>
+                  <th className="text-left py-3 px-4 font-medium text-slate-700">
+                    평점
                   </th>
                   <th className="text-left py-3 px-4 font-medium text-slate-700 w-28">
                     조회 / 공유

@@ -3,19 +3,13 @@
 import { useState, useEffect, useMemo } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import {
-  Search,
-  MapPin,
-  Star,
-} from "lucide-react";
+import { Search, MapPin, Star } from "lucide-react";
 import {
   REGIONS,
   getSigunguBySido,
 } from "@/constants/regions";
 import { fetchAllDestinations, insertViewLog } from "@/lib/supabase";
 import type { Destination } from "@/lib/db/schema";
-
-type SortType = "name" | "ratingHigh" | "ratingLow";
 
 function StarRating({ rating }: { rating: number }) {
   const fullStars = Math.floor(rating);
@@ -78,7 +72,7 @@ function DestinationCard({ item }: { item: Destination }) {
 export default function Home() {
   const [destinations, setDestinations] = useState<Destination[]>([]);
   const [search, setSearch] = useState("");
-  const [sort, setSort] = useState<SortType>("ratingHigh");
+  const [ratingFilter, setRatingFilter] = useState(0); // 0 = 전체
   const [sido, setSido] = useState("");
   const [sigungu, setSigungu] = useState("");
 
@@ -96,7 +90,6 @@ export default function Home() {
   const filteredAndSorted = useMemo(() => {
     let result = [...destinations];
 
-    // 검색 필터
     if (search.trim()) {
       const q = search.trim().toLowerCase();
       result = result.filter(
@@ -107,27 +100,12 @@ export default function Home() {
       );
     }
 
-    // 지역1 (시/도) 필터
-    if (sido) {
-      result = result.filter((d) => d.sido === sido);
-    }
-
-    // 지역2 (시/군/구) 필터
-    if (sigungu) {
-      result = result.filter((d) => d.sigungu === sigungu);
-    }
-
-    // 정렬
-    if (sort === "name") {
-      result.sort((a, b) => (a.title ?? "").localeCompare(b.title ?? ""));
-    } else if (sort === "ratingHigh") {
-      result.sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0));
-    } else if (sort === "ratingLow") {
-      result.sort((a, b) => (a.rating ?? 0) - (b.rating ?? 0));
-    }
+    if (sido) result = result.filter((d) => d.sido === sido);
+    if (sigungu) result = result.filter((d) => d.sigungu === sigungu);
+    if (ratingFilter) result = result.filter((d) => d.rating === ratingFilter);
 
     return result;
-  }, [destinations, search, sort, sido, sigungu]);
+  }, [destinations, search, ratingFilter, sido, sigungu]);
 
   const handleSidoChange = (value: string) => {
     setSido(value);
@@ -152,16 +130,35 @@ export default function Home() {
               />
             </div>
 
-            {/* 정렬 */}
-            <select
-              value={sort}
-              onChange={(e) => setSort(e.target.value as SortType)}
-              className="px-3 py-2 text-sm border border-slate-100 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-slate-200 text-slate-700 cursor-pointer shrink-0 w-[130px]"
-            >
-              <option value="name">가나다 순</option>
-              <option value="ratingHigh">점수 높은 순</option>
-              <option value="ratingLow">점수 낮은 순</option>
-            </select>
+            {/* 별점 필터 */}
+            <div className="flex items-center gap-1 shrink-0">
+              <button
+                type="button"
+                onClick={() => setRatingFilter(0)}
+                className={`px-3 py-2 text-sm rounded-lg border transition-colors ${
+                  ratingFilter === 0
+                    ? "bg-amber-400 border-amber-400 text-white font-medium"
+                    : "bg-gray-50 border-slate-100 text-slate-600 hover:bg-amber-50 hover:border-amber-200"
+                }`}
+              >
+                전체
+              </button>
+              {[1, 2, 3, 4, 5].map((r) => (
+                <button
+                  key={r}
+                  type="button"
+                  onClick={() => setRatingFilter(ratingFilter === r ? 0 : r)}
+                  className={`flex items-center gap-0.5 px-2.5 py-2 text-sm rounded-lg border transition-colors ${
+                    ratingFilter === r
+                      ? "bg-amber-400 border-amber-400 text-white font-medium"
+                      : "bg-gray-50 border-slate-100 text-slate-600 hover:bg-amber-50 hover:border-amber-200"
+                  }`}
+                >
+                  <Star className={`w-3.5 h-3.5 ${ratingFilter === r ? "fill-white text-white" : "fill-amber-400 text-amber-400"}`} />
+                  {r}
+                </button>
+              ))}
+            </div>
 
             {/* 시/도 */}
             <select
