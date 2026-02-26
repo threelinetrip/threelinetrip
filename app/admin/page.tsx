@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { Pencil, Trash2, MapPin, ArrowUp, ArrowDown, Eye, Share2, Users, Home, TrendingUp, Star } from "lucide-react";
+import { Pencil, Trash2, MapPin, ArrowUp, ArrowDown, Eye, Share2, Users, Home, TrendingUp } from "lucide-react";
 import { REGIONS } from "@/constants/regions";
 import {
   fetchAllDestinations,
@@ -10,10 +10,12 @@ import {
   fetchDashboardStats,
   type DashboardStats,
 } from "@/lib/supabase";
+import RatingFilter from "@/components/RatingFilter";
 import type { Destination } from "@/lib/db/schema";
 
-type SortKey = "title" | "region" | "createdAt" | "rating";
+type SortKey = "title" | "region" | "createdAt";
 type SortDir = "asc" | "desc";
+type SortType = "latest" | "name";
 
 function formatDate(iso: string | undefined) {
   if (!iso) return "-";
@@ -31,7 +33,8 @@ export default function AdminDashboardPage() {
   const [items, setItems] = useState<Destination[]>([]);
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [sidoFilter, setSidoFilter] = useState("");
-  const [ratingFilter, setRatingFilter] = useState(0); // 0 = 전체
+  const [ratingFilter, setRatingFilter] = useState<number[]>([]);
+  const [sort, setSort] = useState<SortType>("latest");
   const [sortKey, setSortKey] = useState<SortKey>("createdAt");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
 
@@ -62,21 +65,20 @@ export default function AdminDashboardPage() {
 
   const filteredAndSorted = items
     .filter((d) => !sidoFilter || d.sido === sidoFilter)
-    .filter((d) => !ratingFilter || d.rating === ratingFilter)
+    .filter((d) => ratingFilter.length === 0 || ratingFilter.includes(d.rating))
     .sort((a, b) => {
+      // 드롭다운 정렬이 우선
+      if (sort === "name") {
+        return (a.title ?? "").localeCompare(b.title ?? "");
+      }
+      // "latest" 이면 테이블 헤더 정렬 적용
       let cmp = 0;
       if (sortKey === "title") {
         cmp = (a.title ?? "").localeCompare(b.title ?? "");
       } else if (sortKey === "region") {
-        const aStr = `${a.sido} ${a.sigungu}`;
-        const bStr = `${b.sido} ${b.sigungu}`;
-        cmp = aStr.localeCompare(bStr);
-      } else if (sortKey === "createdAt") {
-        const aDate = a.createdAt ?? "";
-        const bDate = b.createdAt ?? "";
-        cmp = aDate.localeCompare(bDate);
-      } else if (sortKey === "rating") {
-        cmp = (a.rating ?? 0) - (b.rating ?? 0);
+        cmp = `${a.sido} ${a.sigungu}`.localeCompare(`${b.sido} ${b.sigungu}`);
+      } else {
+        cmp = (a.createdAt ?? "").localeCompare(b.createdAt ?? "");
       }
       return sortDir === "asc" ? cmp : -cmp;
     });
@@ -148,68 +150,48 @@ export default function AdminDashboardPage() {
         ))}
       </div>
 
-      {/* 필터 */}
-      <div className="flex flex-col sm:flex-row gap-4 mb-6 flex-wrap">
+      {/* 필터 & 정렬 */}
+      <div className="flex flex-wrap gap-3 mb-6 items-end">
+        {/* 정렬 */}
+        <div>
+          <label className="block text-xs font-medium text-slate-500 mb-1.5">정렬</label>
+          <select
+            value={sort}
+            onChange={(e) => setSort(e.target.value as SortType)}
+            className="px-3 py-2.5 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-slate-200 text-slate-700 cursor-pointer w-[110px]"
+          >
+            <option value="latest">최신순</option>
+            <option value="name">가나다순</option>
+          </select>
+        </div>
+
         {/* 지역 필터 */}
-        <div className="sm:w-56">
-          <label className="block text-xs font-medium text-slate-500 mb-1.5">
-            지역 필터
-          </label>
+        <div>
+          <label className="block text-xs font-medium text-slate-500 mb-1.5">지역 필터</label>
           <div className="relative">
             <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <select
               value={sidoFilter}
               onChange={(e) => setSidoFilter(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-slate-300"
+              className="pl-10 pr-4 py-2.5 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-slate-300 w-56"
             >
               <option value="">전체 지역</option>
               {REGIONS.map((r) => (
-                <option key={r.sido} value={r.sido}>
-                  {r.sido}
-                </option>
+                <option key={r.sido} value={r.sido}>{r.sido}</option>
               ))}
             </select>
           </div>
         </div>
 
-        {/* 별점 필터 */}
+        {/* 별점 복수 필터 */}
         <div>
-          <label className="block text-xs font-medium text-slate-500 mb-1.5">
-            별점 필터
-          </label>
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => setRatingFilter(0)}
-              className={`px-3 py-2 text-sm rounded-lg border transition-colors ${
-                ratingFilter === 0
-                  ? "bg-amber-400 border-amber-400 text-white font-medium"
-                  : "bg-white border-slate-200 text-slate-600 hover:bg-amber-50 hover:border-amber-200"
-              }`}
-            >
-              전체
-            </button>
-            {[1, 2, 3, 4, 5].map((r) => (
-              <button
-                key={r}
-                type="button"
-                onClick={() => setRatingFilter(ratingFilter === r ? 0 : r)}
-                className={`flex items-center gap-0.5 px-2.5 py-2 text-sm rounded-lg border transition-colors ${
-                  ratingFilter === r
-                    ? "bg-amber-400 border-amber-400 text-white font-medium"
-                    : "bg-white border-slate-200 text-slate-600 hover:bg-amber-50 hover:border-amber-200"
-                }`}
-              >
-                <Star className={`w-3.5 h-3.5 ${ratingFilter === r ? "fill-white text-white" : "fill-amber-400 text-amber-400"}`} />
-                {r}
-              </button>
-            ))}
-          </div>
+          <label className="block text-xs font-medium text-slate-500 mb-1.5">별점 필터</label>
+          <RatingFilter selected={ratingFilter} onChange={setRatingFilter} />
         </div>
 
-        <div className="flex items-end">
-          <p className="text-xs text-slate-400 pb-2.5">
-            테이블 헤더를 클릭하면 해당 열 기준으로 정렬됩니다.
+        <div className="flex items-end pb-0.5">
+          <p className="text-xs text-slate-400">
+            테이블 헤더(제목·지역·등록일) 클릭으로 추가 정렬 가능
           </p>
         </div>
       </div>

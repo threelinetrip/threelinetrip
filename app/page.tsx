@@ -4,12 +4,12 @@ import { useState, useEffect, useMemo } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { Search, MapPin, Star } from "lucide-react";
-import {
-  REGIONS,
-  getSigunguBySido,
-} from "@/constants/regions";
+import { REGIONS, getSigunguBySido } from "@/constants/regions";
 import { fetchAllDestinations, insertViewLog } from "@/lib/supabase";
+import RatingFilter from "@/components/RatingFilter";
 import type { Destination } from "@/lib/db/schema";
+
+type SortType = "latest" | "name";
 
 function StarRating({ rating }: { rating: number }) {
   const fullStars = Math.floor(rating);
@@ -23,16 +23,13 @@ function StarRating({ rating }: { rating: number }) {
           }`}
         />
       ))}
-      <span className="ml-1.5 text-sm font-medium text-slate-600">
-        {rating}
-      </span>
+      <span className="ml-1.5 text-sm font-medium text-slate-600">{rating}</span>
     </div>
   );
 }
 
 function DestinationCard({ item }: { item: Destination }) {
   const thumb = item.imageUrls?.[0];
-
   return (
     <Link href={`/destination/${item.id}`} className="block group">
       <article className="h-full bg-white rounded-xl overflow-hidden border border-slate-100 hover:border-slate-200 hover:shadow-lg hover:-translate-y-1 transition-all duration-300 ease-out">
@@ -51,12 +48,9 @@ function DestinationCard({ item }: { item: Destination }) {
             </div>
           )}
         </div>
-
         <div className="p-4">
           <div className="flex items-center justify-between gap-2 mb-1.5">
-            <h2 className="font-semibold text-base text-slate-800 line-clamp-1">
-              {item.title}
-            </h2>
+            <h2 className="font-semibold text-base text-slate-800 line-clamp-1">{item.title}</h2>
             <StarRating rating={item.rating} />
           </div>
           <div className="flex items-center gap-1.5 text-slate-500 text-sm">
@@ -72,7 +66,8 @@ function DestinationCard({ item }: { item: Destination }) {
 export default function Home() {
   const [destinations, setDestinations] = useState<Destination[]>([]);
   const [search, setSearch] = useState("");
-  const [ratingFilter, setRatingFilter] = useState(0); // 0 = 전체
+  const [sort, setSort] = useState<SortType>("latest");
+  const [ratingFilter, setRatingFilter] = useState<number[]>([]);
   const [sido, setSido] = useState("");
   const [sigungu, setSigungu] = useState("");
 
@@ -82,14 +77,13 @@ export default function Home() {
     fetchAllDestinations()
       .then(setDestinations)
       .catch(() => setDestinations([]));
-
-    // 메인 페이지 조회 로그 (destination_id = null)
     insertViewLog(null);
   }, []);
 
   const filteredAndSorted = useMemo(() => {
     let result = [...destinations];
 
+    // 검색 필터
     if (search.trim()) {
       const q = search.trim().toLowerCase();
       result = result.filter(
@@ -100,12 +94,23 @@ export default function Home() {
       );
     }
 
+    // 지역 필터
     if (sido) result = result.filter((d) => d.sido === sido);
     if (sigungu) result = result.filter((d) => d.sigungu === sigungu);
-    if (ratingFilter) result = result.filter((d) => d.rating === ratingFilter);
+
+    // 별점 복수 필터
+    if (ratingFilter.length > 0) {
+      result = result.filter((d) => ratingFilter.includes(d.rating));
+    }
+
+    // 정렬
+    if (sort === "name") {
+      result.sort((a, b) => (a.title ?? "").localeCompare(b.title ?? ""));
+    }
+    // "latest"는 DB 기본 정렬(created_at desc)이므로 별도 처리 불필요
 
     return result;
-  }, [destinations, search, ratingFilter, sido, sigungu]);
+  }, [destinations, search, sort, ratingFilter, sido, sigungu]);
 
   const handleSidoChange = (value: string) => {
     setSido(value);
@@ -114,12 +119,13 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-white">
-      {/* 검색 & 필터 바 (전역 Header 아래에 고정) */}
+      {/* 검색 & 필터 바 */}
       <div className="sticky top-14 z-40 bg-white/95 backdrop-blur-md border-b border-slate-100">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3">
-          <div className="flex flex-row items-center gap-3 flex-wrap">
+          <div className="flex flex-row items-center gap-2 flex-wrap">
+
             {/* 검색 */}
-            <div className="relative flex-1 min-w-[160px] max-w-[260px]">
+            <div className="relative flex-1 min-w-[140px] max-w-[240px]">
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
               <input
                 type="search"
@@ -130,41 +136,21 @@ export default function Home() {
               />
             </div>
 
-            {/* 별점 필터 */}
-            <div className="flex items-center gap-1 shrink-0">
-              <button
-                type="button"
-                onClick={() => setRatingFilter(0)}
-                className={`px-3 py-2 text-sm rounded-lg border transition-colors ${
-                  ratingFilter === 0
-                    ? "bg-amber-400 border-amber-400 text-white font-medium"
-                    : "bg-gray-50 border-slate-100 text-slate-600 hover:bg-amber-50 hover:border-amber-200"
-                }`}
-              >
-                전체
-              </button>
-              {[1, 2, 3, 4, 5].map((r) => (
-                <button
-                  key={r}
-                  type="button"
-                  onClick={() => setRatingFilter(ratingFilter === r ? 0 : r)}
-                  className={`flex items-center gap-0.5 px-2.5 py-2 text-sm rounded-lg border transition-colors ${
-                    ratingFilter === r
-                      ? "bg-amber-400 border-amber-400 text-white font-medium"
-                      : "bg-gray-50 border-slate-100 text-slate-600 hover:bg-amber-50 hover:border-amber-200"
-                  }`}
-                >
-                  <Star className={`w-3.5 h-3.5 ${ratingFilter === r ? "fill-white text-white" : "fill-amber-400 text-amber-400"}`} />
-                  {r}
-                </button>
-              ))}
-            </div>
+            {/* 정렬 */}
+            <select
+              value={sort}
+              onChange={(e) => setSort(e.target.value as SortType)}
+              className="px-3 py-2 text-sm border border-slate-100 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-slate-200 text-slate-700 cursor-pointer shrink-0 w-[110px]"
+            >
+              <option value="latest">최신순</option>
+              <option value="name">가나다순</option>
+            </select>
 
             {/* 시/도 */}
             <select
               value={sido}
               onChange={(e) => handleSidoChange(e.target.value)}
-              className="px-3 py-2 text-sm border border-slate-100 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-slate-200 text-slate-700 cursor-pointer shrink-0 w-[140px]"
+              className="px-3 py-2 text-sm border border-slate-100 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-slate-200 text-slate-700 cursor-pointer shrink-0 w-[140px]"
             >
               <option value="">전체 시/도</option>
               {REGIONS.map((r) => (
@@ -177,13 +163,17 @@ export default function Home() {
               value={sigungu}
               onChange={(e) => setSigungu(e.target.value)}
               disabled={!sido}
-              className="px-3 py-2 text-sm border border-slate-100 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-slate-200 text-slate-700 cursor-pointer shrink-0 w-[130px] disabled:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
+              className="px-3 py-2 text-sm border border-slate-100 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-slate-200 text-slate-700 cursor-pointer shrink-0 w-[130px] disabled:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
             >
               <option value="">전체 시/군/구</option>
               {sigunguList.map((s) => (
                 <option key={s} value={s}>{s}</option>
               ))}
             </select>
+
+            {/* 별점 복수 필터 */}
+            <RatingFilter selected={ratingFilter} onChange={setRatingFilter} />
+
           </div>
         </div>
       </div>
