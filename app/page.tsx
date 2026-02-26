@@ -3,13 +3,11 @@
 import { useState, useEffect, useMemo } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { Search, MapPin, Star } from "lucide-react";
+import { Search, MapPin, Star, ArrowDownAZ } from "lucide-react";
 import { REGIONS, getSigunguBySido } from "@/constants/regions";
 import { fetchAllDestinations, insertViewLog } from "@/lib/supabase";
 import RatingFilter from "@/components/RatingFilter";
 import type { Destination } from "@/lib/db/schema";
-
-type SortType = "latest" | "name";
 
 function StarRating({ rating }: { rating: number }) {
   const fullStars = Math.floor(rating);
@@ -66,7 +64,7 @@ function DestinationCard({ item }: { item: Destination }) {
 export default function Home() {
   const [destinations, setDestinations] = useState<Destination[]>([]);
   const [search, setSearch] = useState("");
-  const [sort, setSort] = useState<SortType>("latest");
+  const [sortByName, setSortByName] = useState(false);
   const [ratingFilter, setRatingFilter] = useState<number[]>([]);
   const [sido, setSido] = useState("");
   const [sigungu, setSigungu] = useState("");
@@ -103,14 +101,13 @@ export default function Home() {
       result = result.filter((d) => ratingFilter.includes(d.rating));
     }
 
-    // 정렬
-    if (sort === "name") {
+    // 가나다순 정렬
+    if (sortByName) {
       result.sort((a, b) => (a.title ?? "").localeCompare(b.title ?? ""));
     }
-    // "latest"는 DB 기본 정렬(created_at desc)이므로 별도 처리 불필요
 
     return result;
-  }, [destinations, search, sort, ratingFilter, sido, sigungu]);
+  }, [destinations, search, sortByName, ratingFilter, sido, sigungu]);
 
   const handleSidoChange = (value: string) => {
     setSido(value);
@@ -125,7 +122,7 @@ export default function Home() {
           <div className="flex flex-row items-center gap-2 flex-wrap">
 
             {/* 검색 */}
-            <div className="relative flex-1 min-w-[140px] max-w-[240px]">
+            <div className="relative flex-1 min-w-[140px] max-w-[220px]">
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
               <input
                 type="search"
@@ -136,15 +133,22 @@ export default function Home() {
               />
             </div>
 
-            {/* 정렬 */}
-            <select
-              value={sort}
-              onChange={(e) => setSort(e.target.value as SortType)}
-              className="px-3 py-2 text-sm border border-slate-100 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-slate-200 text-slate-700 cursor-pointer shrink-0 w-[110px]"
+            {/* 가나다순 정렬 토글 */}
+            <button
+              type="button"
+              onClick={() => setSortByName((v) => !v)}
+              className={`flex items-center gap-1.5 px-3 py-2 text-sm border rounded-lg shrink-0 transition-colors ${
+                sortByName
+                  ? "bg-slate-800 border-slate-800 text-white"
+                  : "bg-gray-50 border-slate-100 text-slate-700 hover:border-slate-300"
+              }`}
             >
-              <option value="latest">최신순</option>
-              <option value="name">가나다순</option>
-            </select>
+              <ArrowDownAZ className="w-4 h-4" />
+              가나다순
+            </button>
+
+            {/* 별점 복수 필터 */}
+            <RatingFilter selected={ratingFilter} onChange={setRatingFilter} />
 
             {/* 시/도 */}
             <select
@@ -170,9 +174,6 @@ export default function Home() {
                 <option key={s} value={s}>{s}</option>
               ))}
             </select>
-
-            {/* 별점 복수 필터 */}
-            <RatingFilter selected={ratingFilter} onChange={setRatingFilter} />
 
           </div>
         </div>

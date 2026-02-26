@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { Pencil, Trash2, MapPin, ArrowUp, ArrowDown, Eye, Share2, Users, Home, TrendingUp } from "lucide-react";
+import { Pencil, Trash2, MapPin, ArrowUp, ArrowDown, Eye, Share2, Users, Home, TrendingUp, ArrowDownAZ } from "lucide-react";
 import { REGIONS } from "@/constants/regions";
 import {
   fetchAllDestinations,
@@ -15,7 +15,6 @@ import type { Destination } from "@/lib/db/schema";
 
 type SortKey = "title" | "region" | "createdAt";
 type SortDir = "asc" | "desc";
-type SortType = "latest" | "name";
 
 function formatDate(iso: string | undefined) {
   if (!iso) return "-";
@@ -34,7 +33,7 @@ export default function AdminDashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [sidoFilter, setSidoFilter] = useState("");
   const [ratingFilter, setRatingFilter] = useState<number[]>([]);
-  const [sort, setSort] = useState<SortType>("latest");
+  const [sortByName, setSortByName] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>("createdAt");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
 
@@ -67,11 +66,11 @@ export default function AdminDashboardPage() {
     .filter((d) => !sidoFilter || d.sido === sidoFilter)
     .filter((d) => ratingFilter.length === 0 || ratingFilter.includes(d.rating))
     .sort((a, b) => {
-      // 드롭다운 정렬이 우선
-      if (sort === "name") {
+      // 가나다순 토글이 켜져 있으면 우선 적용
+      if (sortByName) {
         return (a.title ?? "").localeCompare(b.title ?? "");
       }
-      // "latest" 이면 테이블 헤더 정렬 적용
+      // 테이블 헤더 정렬
       let cmp = 0;
       if (sortKey === "title") {
         cmp = (a.title ?? "").localeCompare(b.title ?? "");
@@ -152,41 +151,46 @@ export default function AdminDashboardPage() {
 
       {/* 필터 & 정렬 */}
       <div className="flex flex-wrap gap-3 mb-6 items-end">
-        {/* 정렬 */}
+
+        {/* 가나다순 토글 */}
         <div>
           <label className="block text-xs font-medium text-slate-500 mb-1.5">정렬</label>
-          <select
-            value={sort}
-            onChange={(e) => setSort(e.target.value as SortType)}
-            className="px-3 py-2.5 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-slate-200 text-slate-700 cursor-pointer w-[110px]"
+          <button
+            type="button"
+            onClick={() => setSortByName((v) => !v)}
+            className={`flex items-center gap-1.5 px-3 py-2.5 text-sm border rounded-lg transition-colors ${
+              sortByName
+                ? "bg-slate-800 border-slate-800 text-white"
+                : "bg-white border-slate-200 text-slate-700 hover:border-slate-300"
+            }`}
           >
-            <option value="latest">최신순</option>
-            <option value="name">가나다순</option>
-          </select>
-        </div>
-
-        {/* 지역 필터 */}
-        <div>
-          <label className="block text-xs font-medium text-slate-500 mb-1.5">지역 필터</label>
-          <div className="relative">
-            <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <select
-              value={sidoFilter}
-              onChange={(e) => setSidoFilter(e.target.value)}
-              className="pl-10 pr-4 py-2.5 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-slate-300 w-56"
-            >
-              <option value="">전체 지역</option>
-              {REGIONS.map((r) => (
-                <option key={r.sido} value={r.sido}>{r.sido}</option>
-              ))}
-            </select>
-          </div>
+            <ArrowDownAZ className="w-4 h-4" />
+            가나다순
+          </button>
         </div>
 
         {/* 별점 복수 필터 */}
         <div>
           <label className="block text-xs font-medium text-slate-500 mb-1.5">별점 필터</label>
           <RatingFilter selected={ratingFilter} onChange={setRatingFilter} />
+        </div>
+
+        {/* 지역 필터 */}
+        <div>
+          <label className="block text-xs font-medium text-slate-500 mb-1.5">시/도</label>
+          <div className="relative">
+            <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <select
+              value={sidoFilter}
+              onChange={(e) => setSidoFilter(e.target.value)}
+              className="pl-10 pr-4 py-2.5 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-slate-300 w-52"
+            >
+              <option value="">전체 시/도</option>
+              {REGIONS.map((r) => (
+                <option key={r.sido} value={r.sido}>{r.sido}</option>
+              ))}
+            </select>
+          </div>
         </div>
 
         <div className="flex items-end pb-0.5">
