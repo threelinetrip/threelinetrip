@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Noto_Sans_KR } from "next/font/google";
 import "./globals.css";
 import Header from "@/components/Header";
@@ -9,13 +9,22 @@ const notoSansKR = Noto_Sans_KR({
   variable: "--font-noto-sans-kr",
 });
 
+const TITLE = "세줄여행 - 세 줄로 만나는 여행지";
+const DESCRIPTION = "세 줄로 기록되는 여행지 정보를 확인하세요!";
+const OG_IMAGE = "/og-image.png";
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  themeColor: "#ffffff",
+};
+
 export const metadata: Metadata = {
   title: {
-    default: "세줄여행 - 세 줄로 만나는 대한민국 여행지",
+    default: TITLE,
     template: "%s | 세줄여행",
   },
-  description:
-    "복잡한 설명 없이, 세 줄로 핵심만 담은 대한민국 여행 큐레이션 서비스입니다.",
+  description: DESCRIPTION,
   keywords: ["여행", "국내여행", "여행지 추천", "세줄여행", "대한민국 여행"],
   authors: [{ name: "세줄여행" }],
   openGraph: {
@@ -23,24 +32,22 @@ export const metadata: Metadata = {
     locale: "ko_KR",
     url: "https://threelinetrip.com",
     siteName: "세줄여행",
-    title: "세줄여행 - 세 줄로 만나는 대한민국 여행지",
-    description:
-      "복잡한 설명 없이, 세 줄로 핵심만 담은 대한민국 여행 큐레이션 서비스입니다.",
+    title: TITLE,
+    description: DESCRIPTION,
     images: [
       {
-        url: "/og-image.png",
+        url: OG_IMAGE,
         width: 1200,
         height: 630,
-        alt: "세줄여행 - 세 줄로 만나는 대한민국 여행지",
+        alt: TITLE,
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "세줄여행 - 세 줄로 만나는 대한민국 여행지",
-    description:
-      "복잡한 설명 없이, 세 줄로 핵심만 담은 대한민국 여행 큐레이션 서비스입니다.",
-    images: ["/og-image.png"],
+    title: TITLE,
+    description: DESCRIPTION,
+    images: [OG_IMAGE],
   },
   robots: {
     index: true,

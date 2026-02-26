@@ -12,7 +12,7 @@ import {
   REGIONS,
   getSigunguBySido,
 } from "@/constants/regions";
-import { fetchAllDestinations } from "@/lib/supabase";
+import { fetchAllDestinations, insertViewLog } from "@/lib/supabase";
 import type { Destination } from "@/lib/db/schema";
 
 type SortType = "name" | "ratingHigh" | "ratingLow";
@@ -88,6 +88,9 @@ export default function Home() {
     fetchAllDestinations()
       .then(setDestinations)
       .catch(() => setDestinations([]));
+
+    // 메인 페이지 조회 로그 (destination_id = null)
+    insertViewLog(null);
   }, []);
 
   const filteredAndSorted = useMemo(() => {

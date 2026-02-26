@@ -139,17 +139,19 @@ export async function deleteDestinationById(id: string): Promise<void> {
 }
 
 /**
- * 상세 페이지 조회 로그 기록 (fire-and-forget)
+ * 페이지 조회 로그 기록 (fire-and-forget)
+ * - 상세 페이지: destinationId에 UUID 전달
+ * - 메인 페이지:  destinationId에 null 전달
  * 실패해도 사용자 경험에 영향 없도록 에러를 조용히 무시합니다.
  */
-export async function insertViewLog(destinationId: string): Promise<void> {
+export async function insertViewLog(destinationId: string | null): Promise<void> {
   const userAgent =
     typeof navigator !== "undefined" ? navigator.userAgent : "";
   const referrer =
     typeof document !== "undefined" ? document.referrer : "";
 
   const { error } = await supabase.from("view_logs").insert({
-    destination_id: destinationId,
+    destination_id: destinationId,   // null 허용 (메인 페이지)
     user_agent: userAgent,
     referrer: referrer,
   });

@@ -5,12 +5,18 @@
 -- =============================================
 
 create table if not exists public.view_logs (
-  id            uuid        primary key default gen_random_uuid(),
-  destination_id uuid        not null references public.destinations(id) on delete cascade,
-  user_agent    text        not null default '',
-  referrer      text        not null default '',
-  created_at    timestamptz not null default now()
+  id             uuid        primary key default gen_random_uuid(),
+  -- null = 메인 페이지 조회 / UUID = 상세 페이지 조회
+  destination_id uuid        references public.destinations(id) on delete cascade,
+  user_agent     text        not null default '',
+  referrer       text        not null default '',
+  created_at     timestamptz not null default now()
 );
+
+-- 이미 테이블이 있는 경우: destination_id 컬럼을 nullable로 변경
+-- (이미 적용되어 있으면 오류 없이 무시됩니다)
+alter table public.view_logs
+  alter column destination_id drop not null;
 
 -- 조회 분석용 인덱스
 create index if not exists view_logs_destination_id_idx on public.view_logs (destination_id);
