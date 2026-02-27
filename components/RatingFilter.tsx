@@ -43,7 +43,7 @@ export default function RatingFilter({ selected, onChange, className = "" }: Pro
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className={`flex items-center gap-2 px-3 py-2 text-sm border rounded-lg cursor-pointer w-[148px] justify-between transition-colors focus:outline-none ${
+        className={`h-10 flex items-center gap-2 px-3 text-sm border rounded-lg cursor-pointer w-full justify-between transition-colors focus:outline-none ${
           active
             ? "bg-amber-50 border-amber-300 text-amber-700"
             : "bg-gray-50 border-slate-100 text-slate-700 hover:border-slate-200"

@@ -123,62 +123,86 @@ export default function Home() {
     <main className="min-h-screen bg-white">
       {/* 검색 & 필터 바 */}
       <div className="sticky top-14 z-40 bg-white/95 backdrop-blur-md border-b border-slate-100">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3">
-          <div className="flex flex-row items-center gap-2 flex-wrap">
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 py-2.5">
+          {/*
+            모바일: flex-col → 3행 수직 구조
+            PC(sm+): flex-row → 기존 가로 배치 유지
+            sm:contents 를 쓴 그룹 div는 sm 이상에서 투명해져
+            자식들이 바로 flex-row 에 합류함
+          */}
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-2">
 
-            {/* 검색 */}
-            <div className="relative flex-1 min-w-[140px] max-w-[220px]">
+            {/* ── 1행(모바일) / PC 첫 요소: 검색창 ── */}
+            <div className="relative w-full sm:flex-1 sm:min-w-[140px] sm:max-w-[220px]">
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
               <input
                 type="search"
                 placeholder="검색"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 text-sm border border-slate-100 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-slate-300 placeholder:text-slate-400"
+                className="h-10 w-full pl-10 pr-4 text-sm border border-slate-100 rounded-lg bg-white
+                           focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-slate-300
+                           placeholder:text-slate-400"
               />
             </div>
 
-            {/* 가나다순 정렬 토글 */}
-            <button
-              type="button"
-              onClick={() => setSortByName((v) => !v)}
-              className={`flex items-center gap-1.5 px-3 py-2 text-sm border rounded-lg shrink-0 transition-colors ${
-                sortByName
-                  ? "bg-slate-800 border-slate-800 text-white"
-                  : "bg-gray-50 border-slate-100 text-slate-700 hover:border-slate-300"
-              }`}
-            >
-              <ArrowDownAZ className="w-4 h-4" />
-              가나다순
-            </button>
+            {/* ── 2행(모바일) 5:5: 가나다순 + 별점 필터 ── */}
+            <div className="grid grid-cols-2 gap-2 sm:contents">
+              {/* 가나다순 토글 */}
+              <button
+                type="button"
+                onClick={() => setSortByName((v) => !v)}
+                className={`h-10 flex items-center justify-center gap-1.5 px-3 text-sm border rounded-lg
+                            transition-colors overflow-hidden sm:shrink-0 sm:w-auto ${
+                  sortByName
+                    ? "bg-slate-800 border-slate-800 text-white"
+                    : "bg-gray-50 border-slate-100 text-slate-700 hover:border-slate-300"
+                }`}
+              >
+                <ArrowDownAZ className="w-4 h-4 shrink-0" />
+                <span className="truncate">가나다순</span>
+              </button>
 
-            {/* 별점 복수 필터 */}
-            <RatingFilter selected={ratingFilter} onChange={setRatingFilter} />
+              {/* 별점 복수 필터 */}
+              <RatingFilter
+                selected={ratingFilter}
+                onChange={setRatingFilter}
+                className="sm:w-[148px] sm:shrink-0"
+              />
+            </div>
 
-            {/* 시/도 */}
-            <select
-              value={sido}
-              onChange={(e) => handleSidoChange(e.target.value)}
-              className="px-3 py-2 text-sm border border-slate-100 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-slate-200 text-slate-700 cursor-pointer shrink-0 w-[140px]"
-            >
-              <option value="">전체 시/도</option>
-              {REGIONS.map((r) => (
-                <option key={r.sido} value={r.sido}>{r.sido}</option>
-              ))}
-            </select>
+            {/* ── 3행(모바일) 5:5: 시/도 + 시/군/구 ── */}
+            <div className="grid grid-cols-2 gap-2 sm:contents">
+              {/* 시/도 */}
+              <select
+                value={sido}
+                onChange={(e) => handleSidoChange(e.target.value)}
+                className="h-10 w-full sm:w-[140px] sm:shrink-0 px-3 text-sm border border-slate-100
+                           rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-slate-200
+                           text-slate-700 cursor-pointer overflow-hidden"
+              >
+                <option value="">전체 시/도</option>
+                {REGIONS.map((r) => (
+                  <option key={r.sido} value={r.sido}>{r.sido}</option>
+                ))}
+              </select>
 
-            {/* 시/군/구 */}
-            <select
-              value={sigungu}
-              onChange={(e) => setSigungu(e.target.value)}
-              disabled={!sido}
-              className="px-3 py-2 text-sm border border-slate-100 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-slate-200 text-slate-700 cursor-pointer shrink-0 w-[130px] disabled:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
-            >
-              <option value="">전체 시/군/구</option>
-              {sigunguList.map((s) => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </select>
+              {/* 시/군/구 */}
+              <select
+                value={sigungu}
+                onChange={(e) => setSigungu(e.target.value)}
+                disabled={!sido}
+                className="h-10 w-full sm:w-[130px] sm:shrink-0 px-3 text-sm border border-slate-100
+                           rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-slate-200
+                           text-slate-700 cursor-pointer overflow-hidden
+                           disabled:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
+              >
+                <option value="">전체 시/군/구</option>
+                {sigunguList.map((s) => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+            </div>
 
           </div>
         </div>
