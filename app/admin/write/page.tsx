@@ -3,77 +3,249 @@
 import { useState, useCallback, useRef, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Image from "next/image";
-import { Star, Loader2, X } from "lucide-react";
+import { Star, Loader2, X, ImagePlus, GripVertical } from "lucide-react";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  rectSortingStrategy,
+  useSortable,
+  arrayMove,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { REGIONS, getSigunguBySido } from "@/constants/regions";
 import {
   fetchDestinationById,
   insertDestination,
   updateDestinationById,
   uploadImages,
+  deleteStorageFiles,
 } from "@/lib/supabase";
 
-/** 선택된 파일의 미리보기 Object URL 생성 */
-function createPreviewUrl(file: File): string {
-  return URL.createObjectURL(file);
+// ─────────────────────────────────────────────
+// 타입 정의
+// ─────────────────────────────────────────────
+type NewImageItem      = { kind: "new";      id: string; file: File;   previewUrl: string };
+type ExistingImageItem = { kind: "existing"; id: string; url: string };
+type ImageItem         = NewImageItem | ExistingImageItem;
+
+const MAX_IMAGES = 10;
+
+// ─────────────────────────────────────────────
+// 드래그 가능한 썸네일 컴포넌트
+// ─────────────────────────────────────────────
+function SortableThumbnail({
+  item,
+  index,
+  onRemove,
+}: {
+  item: ImageItem;
+  index: number;
+  onRemove: (id: string) => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: item.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
+  const imgSrc = item.kind === "new" ? item.previewUrl : item.url;
+  const isRep  = index === 0;
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`relative rounded-xl overflow-hidden border-2 transition-all duration-150 select-none
+        ${isRep ? "border-amber-400" : "border-slate-200"}
+        ${isDragging ? "opacity-40 shadow-2xl ring-2 ring-slate-400" : "opacity-100"}`}
+    >
+      {/* 이미지 + 드래그 핸들 */}
+      <div
+        {...attributes}
+        {...listeners}
+        className="relative aspect-[4/3] bg-slate-100 cursor-grab active:cursor-grabbing touch-none"
+        title="드래그하여 순서 변경"
+      >
+        {item.kind === "new" ? (
+          // blob URL → <img> 사용 (next/image 최적화 불가)
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={imgSrc}
+            alt={`이미지 ${index + 1}`}
+            className="w-full h-full object-contain"
+          />
+        ) : (
+          // Supabase URL → next/image 최적화 적용
+          <Image
+            src={imgSrc}
+            alt={`이미지 ${index + 1}`}
+            fill
+            className="object-contain"
+            sizes="200px"
+          />
+        )}
+
+        {/* 드래그 핸들 아이콘 */}
+        <div className="absolute bottom-1.5 right-1.5 bg-black/30 rounded p-0.5">
+          <GripVertical className="w-3.5 h-3.5 text-white" />
+        </div>
+      </div>
+
+      {/* 대표 뱃지 */}
+      {isRep && (
+        <span className="absolute top-1.5 left-1.5 bg-amber-400 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
+          ★ 대표
+        </span>
+      )}
+
+      {/* 순서 번호 */}
+      <span className="absolute top-1.5 right-8 bg-black/40 text-white text-[10px] px-1.5 py-0.5 rounded">
+        {index + 1}
+      </span>
+
+      {/* 삭제 버튼 */}
+      <button
+        type="button"
+        onClick={() => onRemove(item.id)}
+        className="absolute top-1.5 right-1.5 flex items-center justify-center w-5 h-5 rounded-full
+                   bg-black/50 hover:bg-red-500 text-white transition-colors z-10"
+        aria-label="이미지 삭제"
+      >
+        <X className="w-3 h-3" />
+      </button>
+    </div>
+  );
 }
 
-/** 배열에서 특정 인덱스를 맨 앞으로 이동 */
-function putFirst<T>(arr: T[], idx: number): T[] {
-  if (idx <= 0 || idx >= arr.length) return arr;
-  return [arr[idx], ...arr.slice(0, idx), ...arr.slice(idx + 1)];
-}
-
+// ─────────────────────────────────────────────
+// 메인 폼
+// ─────────────────────────────────────────────
 function AdminWriteForm() {
   const searchParams = useSearchParams();
-  const editId = searchParams.get("id");
-  const isEditMode = !!editId;
+  const editId      = searchParams.get("id");
+  const isEditMode  = !!editId;
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const previewUrlsRef = useRef<string[]>([]);
+  const fileInputRef    = useRef<HTMLInputElement>(null);
+  const originalUrlsRef = useRef<string[]>([]); // 편집 시 원본 URL 보관 (스토리지 정리용)
 
-  const [sido, setSido] = useState("");
-  const [sigungu, setSigungu] = useState("");
+  const [sido, setSido]         = useState("");
+  const [sigungu, setSigungu]   = useState("");
   const [formData, setFormData] = useState({
-    title: "",
+    title:   "",
     address: "",
-    rating: "",
+    rating:  "",
     summary: "",
   });
 
-  // 새로 선택한 파일
-  const [imageFiles, setImageFiles] = useState<File[]>([]);
-  const [previews, setPreviews] = useState<string[]>([]);
-  const [newRepIdx, setNewRepIdx] = useState(0);        // 새 파일 중 대표 인덱스
+  // 단일 imageItems 배열로 신규·기존 이미지 통합 관리
+  const [imageItems, setImageItems] = useState<ImageItem[]>([]);
+  const [uploading, setUploading]   = useState(false);
 
-  // 수정 모드: 기존 이미지 URL 목록 (imageUrls[0]이 현재 대표)
-  const [existingUrls, setExistingUrls] = useState<string[]>([]);
-  const [existingRepIdx, setExistingRepIdx] = useState(0); // 기존 이미지 중 대표 인덱스
-
-  const [uploading, setUploading] = useState(false);
   const sigunguList = getSigunguBySido(sido);
 
-  // 미리보기 Object URL 메모리 정리
+  // ── 언마운트 시 blob URL 해제 ─────────────────────
   useEffect(() => {
-    return () => { previewUrlsRef.current.forEach(URL.revokeObjectURL); };
+    return () => {
+      imageItems.forEach((item) => {
+        if (item.kind === "new") URL.revokeObjectURL(item.previewUrl);
+      });
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 수정 모드 초기값 세팅
+  // ── 수정 모드 초기값 세팅 ─────────────────────────
   useEffect(() => {
     if (!editId) return;
     fetchDestinationById(editId).then((existing) => {
       if (!existing) return;
       setFormData({
-        title: existing.title,
+        title:   existing.title,
         address: existing.address,
-        rating: String(existing.rating),
+        rating:  String(existing.rating),
         summary: existing.summary,
       });
       setSido(existing.sido);
       setSigungu(existing.sigungu);
-      setExistingUrls(existing.imageUrls ?? []);
-      setExistingRepIdx(0);
+
+      const loaded = existing.imageUrls ?? [];
+      originalUrlsRef.current = loaded; // 원본 보관
+      setImageItems(
+        loaded.map((url) => ({
+          kind: "existing" as const,
+          id:   `existing-${url}`,
+          url,
+        }))
+      );
     });
   }, [editId]);
+
+  // ── dnd-kit 센서 (마우스·터치·키보드) ─────────────
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor,   { activationConstraint: { delay: 150, tolerance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      setImageItems((items) => {
+        const oldIdx = items.findIndex((i) => i.id === active.id);
+        const newIdx = items.findIndex((i) => i.id === over.id);
+        return arrayMove(items, oldIdx, newIdx);
+      });
+    }
+  }, []);
+
+  // ── 파일 선택 (누적 Append) ───────────────────────
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    if (!files.length) return;
+
+    const remaining = MAX_IMAGES - imageItems.length;
+    if (remaining <= 0) {
+      alert(`이미지는 최대 ${MAX_IMAGES}장까지 등록 가능합니다.`);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+
+    const toAdd = files.slice(0, remaining);
+    if (files.length > remaining) {
+      alert(`최대 ${MAX_IMAGES}장 제한으로 ${toAdd.length}장만 추가됩니다.`);
+    }
+
+    const newItems: NewImageItem[] = toAdd.map((file) => ({
+      kind:       "new",
+      id:         `new-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      file,
+      previewUrl: URL.createObjectURL(file),
+    }));
+
+    setImageItems((prev) => [...prev, ...newItems]);
+    // 같은 파일을 다시 추가할 수 있도록 input 초기화
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  // ── 개별 이미지 제거 ─────────────────────────────
+  const removeItem = useCallback((id: string) => {
+    setImageItems((items) => {
+      const target = items.find((i) => i.id === id);
+      if (target?.kind === "new") URL.revokeObjectURL(target.previewUrl);
+      return items.filter((i) => i.id !== id);
+    });
+  }, []);
 
   const handleSidoChange = useCallback(
     (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -83,97 +255,80 @@ function AdminWriteForm() {
     []
   );
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? []);
-    if (!files.length) return;
-    previewUrlsRef.current.forEach(URL.revokeObjectURL);
-    const urls = files.map(createPreviewUrl);
-    previewUrlsRef.current = urls;
-    setImageFiles(files);
-    setPreviews(urls);
-    setNewRepIdx(0);
-  };
-
-  const removeNewFile = (idx: number) => {
-    URL.revokeObjectURL(previews[idx]);
-    const newFiles = imageFiles.filter((_, i) => i !== idx);
-    const newPreviews = previews.filter((_, i) => i !== idx);
-    setImageFiles(newFiles);
-    setPreviews(newPreviews);
-    setNewRepIdx((prev) => (prev >= newFiles.length ? Math.max(0, newFiles.length - 1) : prev));
-  };
-
   const resetForm = () => {
     setFormData({ title: "", address: "", rating: "", summary: "" });
-    setSido(""); setSigungu("");
-    setImageFiles([]); setPreviews([]);
-    setExistingUrls([]); setExistingRepIdx(0); setNewRepIdx(0);
+    setSido("");
+    setSigungu("");
+    setImageItems([]);
+    originalUrlsRef.current = [];
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
+  // ── 제출 ─────────────────────────────────────────
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setUploading(true);
 
-    let finalUrls: string[] = [];
-
-    // ── 1단계: 이미지 결정 ──────────────────────────────
-    if (imageFiles.length > 0) {
-      // 새 파일이 있으면 Storage에 업로드
-      try {
-        const uploaded = await uploadImages(imageFiles);
-        // 대표 이미지를 맨 앞으로 재배열
-        finalUrls = putFirst(uploaded, newRepIdx);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : JSON.stringify(err);
-        console.error("[이미지 업로드 오류]", err);
-        alert(
-          `이미지 업로드 중 오류가 발생했습니다:\n\n${msg}\n\n` +
-          `▶ Supabase Storage 버킷(destinations)이 생성되어 있는지 확인하세요.\n` +
-          `▶ supabase/add_image_urls.sql을 실행했는지 확인하세요.`
-        );
-        setUploading(false);
-        return;
-      }
-    } else if (existingUrls.length > 0) {
-      // 기존 이미지 유지, 선택한 대표를 맨 앞으로
-      finalUrls = putFirst(existingUrls, existingRepIdx);
-    }
-
-    // ── 2단계: DB 저장 ────────────────────────────────────
-    const payload = {
-      title: formData.title,
-      sido,
-      sigungu,
-      address: formData.address,
-      summary: formData.summary,
-      rating: formData.rating ? Number(formData.rating) : 5,
-      imageUrls: finalUrls,
-    };
-
     try {
+      // 1. 신규 파일 업로드
+      const newItems = imageItems.filter((i): i is NewImageItem => i.kind === "new");
+      const uploadedMap = new Map<string, string>(); // item.id → 업로드된 URL
+
+      if (newItems.length > 0) {
+        const urls = await uploadImages(newItems.map((i) => i.file));
+        newItems.forEach((item, idx) => uploadedMap.set(item.id, urls[idx]));
+      }
+
+      // 2. 최종 URL 배열 (현재 순서 기준, [0] = 대표)
+      const finalUrls = imageItems.map((item) =>
+        item.kind === "new" ? uploadedMap.get(item.id)! : item.url
+      );
+
+      // 3. 편집 모드: 제거된 기존 이미지를 Storage에서 삭제
+      if (isEditMode && originalUrlsRef.current.length > 0) {
+        const removedUrls = originalUrlsRef.current.filter(
+          (url) => !finalUrls.includes(url)
+        );
+        if (removedUrls.length > 0) await deleteStorageFiles(removedUrls);
+      }
+
+      // 4. DB 저장
+      const payload = {
+        title:     formData.title,
+        sido,
+        sigungu,
+        address:   formData.address,
+        summary:   formData.summary,
+        rating:    formData.rating ? Number(formData.rating) : 5,
+        imageUrls: finalUrls,
+      };
+
       if (isEditMode && editId) {
         await updateDestinationById(editId, payload);
         alert("성공적으로 수정되었습니다!");
         window.location.href = "/admin";
         return;
       }
+
       await insertDestination(payload);
       alert("성공적으로 등록되었습니다!");
       resetForm();
     } catch (err) {
       const msg = err instanceof Error ? err.message : JSON.stringify(err);
-      console.error("[DB 저장 오류]", err);
+      console.error("[저장 오류]", err);
       alert(
-        `데이터 저장 중 오류가 발생했습니다:\n\n${msg}\n\n` +
-        `▶ Supabase SQL Editor에서 add_image_urls.sql을 실행했는지 확인하세요.\n` +
-        `▶ destinations 테이블의 RLS 정책을 확인하세요.`
+        `오류가 발생했습니다:\n\n${msg}\n\n` +
+        `▶ Supabase Storage 버킷(destinations)이 생성되어 있는지 확인하세요.\n` +
+        `▶ supabase/add_image_urls.sql을 실행했는지 확인하세요.`
       );
     } finally {
       setUploading(false);
     }
   };
 
+  // ─────────────────────────────────────────────
+  // 렌더
+  // ─────────────────────────────────────────────
   return (
     <div className="max-w-2xl mx-auto px-4 py-8">
       <h1 className="text-xl font-semibold text-slate-800 mb-8">
@@ -187,7 +342,7 @@ function AdminWriteForm() {
             여행지 이름
           </label>
           <input
-            id="title" type="text" value={formData.title}
+            id="title" type="text" value={formData.title} required
             onChange={(e) => setFormData((p) => ({ ...p, title: e.target.value }))}
             placeholder="예: 강릉 안목해변"
             className="w-full px-4 py-3 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-slate-400 placeholder:text-slate-400"
@@ -224,87 +379,69 @@ function AdminWriteForm() {
           />
         </div>
 
-        {/* 이미지 업로드 */}
+        {/* ── 이미지 업로드 ───────────────────────────── */}
         <div>
-          <label htmlFor="image" className="block text-sm font-medium text-slate-700 mb-2">
-            이미지
-            <span className="ml-1.5 text-xs text-slate-400 font-normal">
-              여러 장 선택 가능 · 대표 이미지가 카드에 표시됩니다
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-sm font-medium text-slate-700">
+              이미지
+              <span className="ml-1.5 text-xs text-slate-400 font-normal">
+                최대 {MAX_IMAGES}장 · 드래그로 순서 변경 · 맨 앞이 대표 이미지
+              </span>
+            </label>
+            <span className={`text-xs font-medium tabular-nums ${imageItems.length >= MAX_IMAGES ? "text-red-500" : "text-slate-400"}`}>
+              {imageItems.length} / {MAX_IMAGES}
             </span>
+          </div>
+
+          {/* 파일 선택 버튼 */}
+          <label
+            className={`flex items-center justify-center gap-2 w-full py-3 border-2 border-dashed rounded-xl cursor-pointer transition-colors
+              ${imageItems.length >= MAX_IMAGES
+                ? "border-slate-100 bg-slate-50 text-slate-300 cursor-not-allowed"
+                : "border-slate-200 hover:border-slate-400 hover:bg-slate-50 text-slate-500"}`}
+          >
+            <ImagePlus className="w-4 h-4" />
+            <span className="text-sm font-medium">
+              {imageItems.length >= MAX_IMAGES ? "최대 장수 도달" : "이미지 추가 (여러 장 선택 가능)"}
+            </span>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              disabled={imageItems.length >= MAX_IMAGES}
+              onChange={handleFileChange}
+              className="hidden"
+            />
           </label>
 
-          <input
-            ref={fileInputRef} id="image" type="file" accept="image/*" multiple
-            onChange={handleFileChange}
-            className="w-full px-4 py-3 border border-slate-200 rounded-lg bg-white file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-slate-100 file:text-slate-700 file:text-sm file:font-medium hover:file:bg-slate-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-slate-400"
-          />
-
-          {/* 새로 선택한 파일 미리보기 */}
-          {previews.length > 0 && (
+          {/* 썸네일 그리드 (DnD) */}
+          {imageItems.length > 0 && (
             <div className="mt-4">
-              <p className="text-xs font-medium text-slate-500 mb-3">
-                선택된 이미지 ({previews.length}장) — 대표 이미지를 선택하세요
+              <p className="text-xs text-slate-400 mb-3">
+                ↕ 드래그하여 순서를 바꾸세요. 첫 번째 이미지가 대표로 사용됩니다.
               </p>
-              <div className="grid grid-cols-3 gap-3">
-                {previews.map((url, i) => (
-                  <div key={i}
-                    className={`relative rounded-xl overflow-hidden border-2 transition-colors ${newRepIdx === i ? "border-amber-400" : "border-slate-200"}`}>
-                    <div className="relative aspect-[4/3]">
-                      <img src={url} alt={`미리보기 ${i + 1}`} className="w-full h-full object-cover" />
-                    </div>
-                    <div className="p-2 flex items-center justify-between bg-white">
-                      <label className="flex items-center gap-1.5 cursor-pointer">
-                        <input type="radio" name="newRepImage" value={i}
-                          checked={newRepIdx === i}
-                          onChange={() => setNewRepIdx(i)}
-                          className="w-3.5 h-3.5 accent-amber-400"
-                        />
-                        <span className={`text-xs font-medium ${newRepIdx === i ? "text-amber-600" : "text-slate-500"}`}>
-                          {newRepIdx === i ? "★ 대표" : "대표"}
-                        </span>
-                      </label>
-                      <button type="button" onClick={() => removeNewFile(i)}
-                        className="p-0.5 rounded-full text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors">
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                    <span className="absolute top-1.5 left-1.5 bg-black/50 text-white text-xs px-1.5 py-0.5 rounded">
-                      {i + 1}
-                    </span>
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleDragEnd}
+              >
+                <SortableContext
+                  items={imageItems.map((i) => i.id)}
+                  strategy={rectSortingStrategy}
+                >
+                  <div className="grid grid-cols-3 gap-3">
+                    {imageItems.map((item, index) => (
+                      <SortableThumbnail
+                        key={item.id}
+                        item={item}
+                        index={index}
+                        onRemove={removeItem}
+                      />
+                    ))}
                   </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* 수정 모드: 기존 이미지 (새 파일 선택 전까지 표시) */}
-          {isEditMode && imageFiles.length === 0 && existingUrls.length > 0 && (
-            <div className="mt-4">
-              <p className="text-xs font-medium text-slate-500 mb-3">
-                기존 이미지 ({existingUrls.length}장) — 대표 이미지를 변경하거나 새 파일을 선택하세요
-              </p>
-              <div className="grid grid-cols-3 gap-3">
-                {existingUrls.map((url, i) => (
-                  <div key={i}
-                    className={`relative rounded-xl overflow-hidden border-2 transition-colors ${existingRepIdx === i ? "border-amber-400" : "border-slate-200"}`}>
-                    <div className="relative aspect-[4/3]">
-                      <Image src={url} alt={`기존 ${i + 1}`} fill className="object-cover" />
-                    </div>
-                    <div className="p-2 bg-white">
-                      <label className="flex items-center gap-1.5 cursor-pointer">
-                        <input type="radio" name="existingRepImage" value={i}
-                          checked={existingRepIdx === i}
-                          onChange={() => setExistingRepIdx(i)}
-                          className="w-3.5 h-3.5 accent-amber-400"
-                        />
-                        <span className={`text-xs font-medium ${existingRepIdx === i ? "text-amber-600" : "text-slate-500"}`}>
-                          {existingRepIdx === i ? "★ 대표" : "대표"}
-                        </span>
-                      </label>
-                    </div>
-                  </div>
-                ))}
-              </div>
+                </SortableContext>
+              </DndContext>
             </div>
           )}
         </div>
@@ -338,12 +475,12 @@ function AdminWriteForm() {
           />
         </div>
 
-        {/* 버튼 */}
+        {/* 제출 버튼 */}
         <div className="pt-4">
           <button type="submit" disabled={uploading}
             className="w-full py-4 bg-slate-900 text-white font-semibold rounded-lg hover:bg-slate-800 disabled:bg-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900 focus:ring-offset-2 transition-colors flex items-center justify-center gap-2">
             {uploading && <Loader2 className="w-5 h-5 animate-spin" />}
-            {uploading ? "업로드 중..." : isEditMode ? "수정하기" : "등록하기"}
+            {uploading ? "저장 중..." : isEditMode ? "수정하기" : "등록하기"}
           </button>
         </div>
       </form>

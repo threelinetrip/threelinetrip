@@ -79,6 +79,26 @@ export async function uploadImages(files: File[]): Promise<string[]> {
   return Promise.all(files.map((f) => uploadImage(f)));
 }
 
+/**
+ * Storage에서 이미지 파일 삭제 (편집 시 제거된 기존 이미지 정리용)
+ * - URL 에서 버킷 이후 경로를 추출해 remove 호출
+ * - 실패해도 저장 흐름에 영향 없도록 warn 처리
+ */
+export async function deleteStorageFiles(urls: string[]): Promise<void> {
+  const marker = `/storage/v1/object/public/${BUCKET}/`;
+  const paths = urls
+    .map((url) => {
+      const idx = url.indexOf(marker);
+      return idx !== -1 ? url.slice(idx + marker.length) : null;
+    })
+    .filter(Boolean) as string[];
+
+  if (paths.length === 0) return;
+
+  const { error } = await supabase.storage.from(BUCKET).remove(paths);
+  if (error) console.warn("[Storage 파일 삭제 실패]", toErrorMessage(error));
+}
+
 /** 전체 여행지 조회 */
 export async function fetchAllDestinations(): Promise<Destination[]> {
   const { data, error } = await supabase
