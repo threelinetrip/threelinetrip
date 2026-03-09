@@ -18,21 +18,100 @@ import { fetchDestinationById, insertViewLog } from "@/lib/supabase";
 import type { Destination } from "@/lib/db/schema";
 
 // ─────────────────────────────────────────────
-// 라이트박스 (Swiper 기반)
+// 헬퍼: URL이 동영상인지 판단
+// ─────────────────────────────────────────────
+const VIDEO_EXTS = [".mp4", ".webm", ".mov", ".avi", ".mkv", ".m4v"];
+
+function isVideoUrl(url: string): boolean {
+  const lower = url.toLowerCase().split("?")[0];
+  return VIDEO_EXTS.some((ext) => lower.endsWith(ext));
+}
+
+/** Swiper 슬라이드 컨테이너 내 모든 <video> 를 일시정지 */
+function pauseVideosInSwiper(swiper: SwiperInstance) {
+  swiper.el?.querySelectorAll<HTMLVideoElement>("video").forEach((v) => v.pause());
+}
+
+// ─────────────────────────────────────────────
+// 슬라이드 내 미디어 렌더러 (이미지 / 동영상 분기)
+// ─────────────────────────────────────────────
+interface MediaSlideProps {
+  url: string;
+  label: string;
+  /** 이미지 클릭 시 라이트박스 열기 콜백 (동영상이면 undefined) */
+  onImageClick?: () => void;
+  priority?: boolean;
+}
+
+function MediaSlide({ url, label, onImageClick, priority = false }: MediaSlideProps) {
+  if (isVideoUrl(url)) {
+    return (
+      // 동영상: 자동재생(muted)·반복·컨트롤 표시
+      // playsInline: 모바일 풀스크린 방지
+      <video
+        src={url}
+        autoPlay
+        muted
+        loop
+        playsInline
+        controls
+        className="w-full h-full object-contain bg-black"
+      />
+    );
+  }
+
+  // 이미지
+  return (
+    <div
+      className={`relative w-full h-full bg-slate-100 group ${
+        onImageClick ? "cursor-zoom-in" : ""
+      }`}
+      onClick={onImageClick}
+    >
+      {url.startsWith("data:") ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={url} alt={label} className="w-full h-full object-contain" />
+      ) : (
+        <Image
+          src={url}
+          alt={label}
+          fill
+          className="object-contain"
+          sizes="(max-width: 672px) 100vw, 672px"
+          priority={priority}
+        />
+      )}
+      {/* 확대 힌트 */}
+      {onImageClick && (
+        <div
+          className="absolute inset-0 flex items-center justify-center
+                     opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"
+        >
+          <div className="bg-black/40 rounded-full p-2">
+            <ZoomIn className="w-5 h-5 text-white" />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// 라이트박스 (Swiper 기반, 이미지 + 동영상 혼합)
 // ─────────────────────────────────────────────
 interface LightboxProps {
-  images: string[];
+  media: string[];
   initialIdx: number;
   title: string;
   onClose: () => void;
 }
 
-function Lightbox({ images, initialIdx, title, onClose }: LightboxProps) {
-  const swiperRef = useRef<SwiperInstance | null>(null);
+function Lightbox({ media, initialIdx, title, onClose }: LightboxProps) {
+  const swiperRef   = useRef<SwiperInstance | null>(null);
   const [currentIdx, setCurrentIdx] = useState(initialIdx);
-  const multi = images.length > 1;
+  const multi = media.length > 1;
 
-  // Esc / 방향키 지원 + body 스크롤 잠금
+  // Esc / 방향키 + body 스크롤 잠금
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -44,23 +123,33 @@ function Lightbox({ images, initialIdx, title, onClose }: LightboxProps) {
     return () => {
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = "";
+      // 닫을 때 재생 중인 동영상 정지
+      swiperRef.current && pauseVideosInSwiper(swiperRef.current);
     };
   }, [onClose]);
 
+  const handleSlideChange = useCallback((swiper: SwiperInstance) => {
+    // 이전 슬라이드 동영상 정지
+    pauseVideosInSwiper(swiper);
+    setCurrentIdx(swiper.realIndex);
+  }, []);
+
   return (
-    /* 배경 클릭으로 닫기 */
     <div
       className="fixed inset-0 z-50 bg-black/95 flex flex-col select-none"
       onClick={onClose}
     >
-      {/* 상단 바 ── 닫기 버튼 & 카운터 */}
+      {/* 상단 바 */}
       <div
         className="flex items-center justify-between px-4 h-14 shrink-0"
         onClick={(e) => e.stopPropagation()}
       >
         {multi ? (
           <span className="text-white/60 text-sm tabular-nums font-medium">
-            {currentIdx + 1} / {images.length}
+            {currentIdx + 1} / {media.length}
+            {isVideoUrl(media[currentIdx]) && (
+              <span className="ml-2 text-indigo-400 text-xs">동영상</span>
+            )}
           </span>
         ) : (
           <span />
@@ -68,7 +157,8 @@ function Lightbox({ images, initialIdx, title, onClose }: LightboxProps) {
         <button
           type="button"
           onClick={onClose}
-          className="flex items-center justify-center w-9 h-9 rounded-full text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+          className="flex items-center justify-center w-9 h-9 rounded-full text-white/70
+                     hover:text-white hover:bg-white/10 transition-colors"
           aria-label="닫기"
         >
           <X className="w-5 h-5" />
@@ -76,24 +166,30 @@ function Lightbox({ images, initialIdx, title, onClose }: LightboxProps) {
       </div>
 
       {/* 슬라이더 */}
-      <div
-        className="relative flex-1 min-h-0"
-        onClick={(e) => e.stopPropagation()}
-      >
+      <div className="relative flex-1 min-h-0" onClick={(e) => e.stopPropagation()}>
         <Swiper
-          // 터치·스와이프는 Swiper 기본 지원 — 별도 모듈 불필요
           initialSlide={initialIdx}
           loop={multi}
           grabCursor
           speed={320}
           onSwiper={(s) => { swiperRef.current = s; }}
-          onSlideChange={(s) => setCurrentIdx(s.realIndex)}
+          onSlideChangeTransitionStart={handleSlideChange}
           className="h-full w-full"
         >
-          {images.map((url, i) => (
+          {media.map((url, i) => (
             <SwiperSlide key={i}>
-              <div className="relative w-full h-full">
-                {url.startsWith("data:") ? (
+              <div className="relative w-full h-full flex items-center justify-center">
+                {isVideoUrl(url) ? (
+                  <video
+                    src={url}
+                    autoPlay
+                    muted
+                    loop
+                    playsInline
+                    controls
+                    className="max-w-full max-h-full object-contain"
+                  />
+                ) : url.startsWith("data:") ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={url}
@@ -115,7 +211,7 @@ function Lightbox({ images, initialIdx, title, onClose }: LightboxProps) {
           ))}
         </Swiper>
 
-        {/* 좌우 화살표 — 이미지 2장 이상일 때만 표시 */}
+        {/* 좌우 화살표 — 2개 이상일 때만 */}
         {multi && (
           <>
             <button
@@ -124,7 +220,7 @@ function Lightbox({ images, initialIdx, title, onClose }: LightboxProps) {
               className="absolute left-2 sm:left-4 top-1/2 -translate-y-1/2 z-10
                          flex items-center justify-center w-10 h-10 rounded-full
                          bg-black/40 hover:bg-black/65 text-white transition-colors"
-              aria-label="이전 이미지"
+              aria-label="이전"
             >
               <ChevronLeft className="w-6 h-6" />
             </button>
@@ -134,7 +230,7 @@ function Lightbox({ images, initialIdx, title, onClose }: LightboxProps) {
               className="absolute right-2 sm:right-4 top-1/2 -translate-y-1/2 z-10
                          flex items-center justify-center w-10 h-10 rounded-full
                          bg-black/40 hover:bg-black/65 text-white transition-colors"
-              aria-label="다음 이미지"
+              aria-label="다음"
             >
               <ChevronRight className="w-6 h-6" />
             </button>
@@ -142,7 +238,6 @@ function Lightbox({ images, initialIdx, title, onClose }: LightboxProps) {
         )}
       </div>
 
-      {/* 하단 여백 */}
       <div className="h-4 shrink-0" />
     </div>
   );
@@ -155,18 +250,25 @@ export default function DestinationDetailPage() {
   const params = useParams();
   const id = params.id as string;
 
+  const mainSwiperRef = useRef<SwiperInstance | null>(null);
+
   const [destination, setDestination] = useState<Destination | undefined>(undefined);
-  const [shared, setShared] = useState(false);
-  const [lightboxIdx, setLightboxIdx] = useState<number | null>(null);
+  const [shared,       setShared]      = useState(false);
+  const [lightboxIdx,  setLightboxIdx] = useState<number | null>(null);
 
   const closeLightbox = useCallback(() => setLightboxIdx(null), []);
 
+  // 슬라이드 이동 시 동영상 정지
+  const handleMainSlideChange = useCallback((swiper: SwiperInstance) => {
+    pauseVideosInSwiper(swiper);
+  }, []);
+
   const handleShare = async () => {
     const url = typeof window !== "undefined" ? window.location.href : "";
-    const title = destination?.title ?? "세줄여행";
+    const shareTitle = destination?.title ?? "세줄여행";
     try {
       if (navigator.share) {
-        await navigator.share({ title, url });
+        await navigator.share({ title: shareTitle, url });
       } else {
         await navigator.clipboard.writeText(url);
         setShared(true);
@@ -186,7 +288,7 @@ export default function DestinationDetailPage() {
   }, [id]);
 
   const summaryLines = destination?.summary?.split("\n").filter(Boolean) ?? [];
-  const images: string[] = destination?.imageUrls ?? [];
+  const media: string[] = destination?.imageUrls ?? [];
 
   if (!destination) {
     return (
@@ -208,51 +310,31 @@ export default function DestinationDetailPage() {
 
         {/* 메인 슬라이더 */}
         <div className="rounded-xl overflow-hidden mb-6 bg-slate-100">
-          {images.length > 0 ? (
+          {media.length > 0 ? (
             <Swiper
               modules={[Navigation, Pagination]}
-              navigation={images.length > 1}
-              pagination={images.length > 1 ? { clickable: true } : false}
-              loop={images.length > 1}
+              navigation={media.length > 1}
+              pagination={media.length > 1 ? { clickable: true } : false}
+              loop={media.length > 1}
+              onSwiper={(s) => { mainSwiperRef.current = s; }}
+              onSlideChangeTransitionStart={handleMainSlideChange}
               className="aspect-[4/3] w-full"
             >
-              {images.map((url, i) => (
+              {media.map((url, i) => (
                 <SwiperSlide key={i}>
-                  <div
-                    className="relative w-full h-full bg-slate-100 cursor-zoom-in group"
-                    onClick={() => setLightboxIdx(i)}
-                  >
-                    {url.startsWith("data:") ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={url}
-                        alt={`${destination.title} ${i + 1}`}
-                        className="w-full h-full object-contain"
-                      />
-                    ) : (
-                      <Image
-                        src={url}
-                        alt={`${destination.title} ${i + 1}`}
-                        fill
-                        className="object-contain"
-                        sizes="(max-width: 672px) 100vw, 672px"
-                        priority={i === 0}
-                      />
-                    )}
-                    {/* 확대 힌트 */}
-                    <div className="absolute inset-0 flex items-center justify-center
-                                    opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-                      <div className="bg-black/40 rounded-full p-2">
-                        <ZoomIn className="w-5 h-5 text-white" />
-                      </div>
-                    </div>
-                  </div>
+                  <MediaSlide
+                    url={url}
+                    label={`${destination.title} ${i + 1}`}
+                    // 동영상이면 라이트박스 안 열고 인라인 재생
+                    onImageClick={isVideoUrl(url) ? undefined : () => setLightboxIdx(i)}
+                    priority={i === 0}
+                  />
                 </SwiperSlide>
               ))}
             </Swiper>
           ) : (
             <div className="aspect-[4/3] bg-slate-100 flex items-center justify-center text-slate-400 rounded-xl">
-              이미지 없음
+              미디어 없음
             </div>
           )}
         </div>
@@ -324,10 +406,10 @@ export default function DestinationDetailPage() {
         </div>
       </div>
 
-      {/* 라이트박스 */}
+      {/* 라이트박스 — 이미지 클릭 시만 열림 */}
       {lightboxIdx !== null && (
         <Lightbox
-          images={images}
+          media={media}
           initialIdx={lightboxIdx}
           title={destination.title}
           onClose={closeLightbox}

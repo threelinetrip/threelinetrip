@@ -62,21 +62,47 @@ export function toDbRow(
   };
 }
 
-/** Storage에 이미지 한 장 업로드 → 공개 URL 반환 */
-export async function uploadImage(file: File): Promise<string> {
-  const ext = file.name.split(".").pop() ?? "jpg";
+/**
+ * Storage에 파일 한 개 업로드 → 공개 URL 반환
+ * - 이미지·동영상 모두 지원 (file.type 으로 MIME 타입 자동 지정)
+ */
+export async function uploadFile(file: File): Promise<string> {
+  const ext = file.name.split(".").pop() ?? "bin";
   const path = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-  const { error } = await supabase.storage
-    .from(BUCKET)
-    .upload(path, file, { cacheControl: "3600", upsert: false });
+  const { error } = await supabase.storage.from(BUCKET).upload(path, file, {
+    cacheControl: "3600",
+    upsert: false,
+    contentType: file.type || "application/octet-stream",
+  });
   if (error) throw new Error(`[Storage 업로드 실패] ${toErrorMessage(error)}`);
   const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
   return data.publicUrl;
 }
 
-/** Storage에 이미지 여러 장 병렬 업로드 → 공개 URL 배열 반환 */
+/** 하위 호환 — 이미지 단일 업로드 */
+export async function uploadImage(file: File): Promise<string> {
+  return uploadFile(file);
+}
+
+/** 여러 파일 병렬 업로드 */
 export async function uploadImages(files: File[]): Promise<string[]> {
-  return Promise.all(files.map((f) => uploadImage(f)));
+  return Promise.all(files.map((f) => uploadFile(f)));
+}
+
+/**
+ * 여러 파일 순차 업로드 + 진행률 콜백 (0 → 100)
+ * - 파일 수가 많거나 동영상처럼 용량이 클 때 프로그레스 바에 활용
+ */
+export async function uploadFilesWithProgress(
+  files: File[],
+  onProgress: (percent: number) => void
+): Promise<string[]> {
+  const urls: string[] = [];
+  for (let i = 0; i < files.length; i++) {
+    urls.push(await uploadFile(files[i]));
+    onProgress(Math.round(((i + 1) / files.length) * 100));
+  }
+  return urls;
 }
 
 /**

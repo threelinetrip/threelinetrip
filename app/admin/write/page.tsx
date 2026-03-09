@@ -3,7 +3,7 @@
 import { useState, useCallback, useRef, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Image from "next/image";
-import { Star, Loader2, X, ImagePlus, GripVertical } from "lucide-react";
+import { Star, Loader2, X, ImagePlus, GripVertical, Play } from "lucide-react";
 import {
   DndContext,
   closestCenter,
@@ -27,18 +27,44 @@ import {
   fetchDestinationById,
   insertDestination,
   updateDestinationById,
-  uploadImages,
+  uploadFilesWithProgress,
   deleteStorageFiles,
 } from "@/lib/supabase";
 
 // ─────────────────────────────────────────────
+// 상수 및 헬퍼
+// ─────────────────────────────────────────────
+const MAX_ITEMS    = 10;
+const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
+
+const VIDEO_EXTS = [".mp4", ".webm", ".mov", ".avi", ".mkv", ".m4v"];
+
+function isVideoFile(file: File): boolean {
+  return file.type.startsWith("video/");
+}
+
+function isVideoUrl(url: string): boolean {
+  const lower = url.toLowerCase().split("?")[0];
+  return VIDEO_EXTS.some((ext) => lower.endsWith(ext));
+}
+
+// ─────────────────────────────────────────────
 // 타입 정의
 // ─────────────────────────────────────────────
-type NewImageItem      = { kind: "new";      id: string; file: File;   previewUrl: string };
-type ExistingImageItem = { kind: "existing"; id: string; url: string };
-type ImageItem         = NewImageItem | ExistingImageItem;
-
-const MAX_IMAGES = 10;
+type NewMediaItem = {
+  kind: "new";
+  id: string;
+  file: File;
+  previewUrl: string;
+  isVideo: boolean;
+};
+type ExistingMediaItem = {
+  kind: "existing";
+  id: string;
+  url: string;
+  isVideo: boolean;
+};
+type MediaItem = NewMediaItem | ExistingMediaItem;
 
 // ─────────────────────────────────────────────
 // 드래그 가능한 썸네일 컴포넌트
@@ -48,19 +74,15 @@ function SortableThumbnail({
   index,
   onRemove,
 }: {
-  item: ImageItem;
+  item: MediaItem;
   index: number;
   onRemove: (id: string) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: item.id });
 
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-  };
-
-  const imgSrc = item.kind === "new" ? item.previewUrl : item.url;
+  const style = { transform: CSS.Transform.toString(transform), transition };
+  const src    = item.kind === "new" ? item.previewUrl : item.url;
   const isRep  = index === 0;
 
   return (
@@ -71,42 +93,70 @@ function SortableThumbnail({
         ${isRep ? "border-amber-400" : "border-slate-200"}
         ${isDragging ? "opacity-40 shadow-2xl ring-2 ring-slate-400" : "opacity-100"}`}
     >
-      {/* 이미지 + 드래그 핸들 */}
+      {/* 미디어 영역 + 드래그 핸들 */}
       <div
         {...attributes}
         {...listeners}
-        className="relative aspect-[4/3] bg-slate-100 cursor-grab active:cursor-grabbing touch-none"
+        className="relative aspect-[4/3] bg-slate-100 cursor-grab active:cursor-grabbing touch-none overflow-hidden"
         title="드래그하여 순서 변경"
       >
-        {item.kind === "new" ? (
-          // blob URL → <img> 사용 (next/image 최적화 불가)
+        {item.isVideo ? (
+          // 동영상: preload="metadata" 로 첫 프레임만 로드
+          // pointer-events-none 으로 드래그 이벤트 방해 방지
+          <video
+            src={src}
+            muted
+            preload="metadata"
+            className="w-full h-full object-contain pointer-events-none"
+          />
+        ) : item.kind === "new" ? (
+          // 신규 이미지: blob URL → <img>
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={imgSrc}
-            alt={`이미지 ${index + 1}`}
-            className="w-full h-full object-contain"
+            src={src}
+            alt={`미디어 ${index + 1}`}
+            className="w-full h-full object-contain pointer-events-none"
           />
         ) : (
-          // Supabase URL → next/image 최적화 적용
+          // 기존 이미지: Supabase URL → next/image 최적화
           <Image
-            src={imgSrc}
-            alt={`이미지 ${index + 1}`}
+            src={src}
+            alt={`미디어 ${index + 1}`}
             fill
             className="object-contain"
             sizes="200px"
           />
         )}
 
-        {/* 드래그 핸들 아이콘 */}
+        {/* 동영상 플레이 아이콘 오버레이 */}
+        {item.isVideo && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/20 pointer-events-none">
+            <div className="bg-black/50 rounded-full p-2">
+              <Play className="w-4 h-4 text-white fill-white" />
+            </div>
+          </div>
+        )}
+
+        {/* 드래그 핸들 */}
         <div className="absolute bottom-1.5 right-1.5 bg-black/30 rounded p-0.5">
           <GripVertical className="w-3.5 h-3.5 text-white" />
         </div>
       </div>
 
-      {/* 대표 뱃지 */}
+      {/* 대표 뱃지 (첫 번째 아이템) */}
       {isRep && (
         <span className="absolute top-1.5 left-1.5 bg-amber-400 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
           ★ 대표
+        </span>
+      )}
+
+      {/* 동영상 뱃지 */}
+      {item.isVideo && (
+        <span
+          className={`absolute text-white text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-500
+            ${isRep ? "top-7 left-1.5" : "top-1.5 left-1.5"}`}
+        >
+          동영상
         </span>
       )}
 
@@ -121,7 +171,7 @@ function SortableThumbnail({
         onClick={() => onRemove(item.id)}
         className="absolute top-1.5 right-1.5 flex items-center justify-center w-5 h-5 rounded-full
                    bg-black/50 hover:bg-red-500 text-white transition-colors z-10"
-        aria-label="이미지 삭제"
+        aria-label="삭제"
       >
         <X className="w-3 h-3" />
       </button>
@@ -138,7 +188,7 @@ function AdminWriteForm() {
   const isEditMode  = !!editId;
 
   const fileInputRef    = useRef<HTMLInputElement>(null);
-  const originalUrlsRef = useRef<string[]>([]); // 편집 시 원본 URL 보관 (스토리지 정리용)
+  const originalUrlsRef = useRef<string[]>([]);
 
   const [sido, setSido]         = useState("");
   const [sigungu, setSigungu]   = useState("");
@@ -149,23 +199,23 @@ function AdminWriteForm() {
     summary: "",
   });
 
-  // 단일 imageItems 배열로 신규·기존 이미지 통합 관리
-  const [imageItems, setImageItems] = useState<ImageItem[]>([]);
-  const [uploading, setUploading]   = useState(false);
+  const [mediaItems, setMediaItems]     = useState<MediaItem[]>([]);
+  const [uploading, setUploading]       = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
 
   const sigunguList = getSigunguBySido(sido);
 
-  // ── 언마운트 시 blob URL 해제 ─────────────────────
+  // 언마운트 시 blob URL 해제
   useEffect(() => {
     return () => {
-      imageItems.forEach((item) => {
+      mediaItems.forEach((item) => {
         if (item.kind === "new") URL.revokeObjectURL(item.previewUrl);
       });
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── 수정 모드 초기값 세팅 ─────────────────────────
+  // 수정 모드 초기값 세팅
   useEffect(() => {
     if (!editId) return;
     fetchDestinationById(editId).then((existing) => {
@@ -180,18 +230,19 @@ function AdminWriteForm() {
       setSigungu(existing.sigungu);
 
       const loaded = existing.imageUrls ?? [];
-      originalUrlsRef.current = loaded; // 원본 보관
-      setImageItems(
+      originalUrlsRef.current = loaded;
+      setMediaItems(
         loaded.map((url) => ({
-          kind: "existing" as const,
-          id:   `existing-${url}`,
+          kind:    "existing" as const,
+          id:      `existing-${url}`,
           url,
+          isVideo: isVideoUrl(url),
         }))
       );
     });
   }, [editId]);
 
-  // ── dnd-kit 센서 (마우스·터치·키보드) ─────────────
+  // dnd-kit 센서
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(TouchSensor,   { activationConstraint: { delay: 150, tolerance: 8 } }),
@@ -201,7 +252,7 @@ function AdminWriteForm() {
   const handleDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event;
     if (over && active.id !== over.id) {
-      setImageItems((items) => {
+      setMediaItems((items) => {
         const oldIdx = items.findIndex((i) => i.id === active.id);
         const newIdx = items.findIndex((i) => i.id === over.id);
         return arrayMove(items, oldIdx, newIdx);
@@ -209,38 +260,53 @@ function AdminWriteForm() {
     }
   }, []);
 
-  // ── 파일 선택 (누적 Append) ───────────────────────
+  // 파일 선택 (누적 Append)
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? []);
+    let files = Array.from(e.target.files ?? []);
     if (!files.length) return;
 
-    const remaining = MAX_IMAGES - imageItems.length;
+    // ① 파일 크기 검사 (50 MB 초과 제외)
+    const oversized = files.filter((f) => f.size > MAX_FILE_SIZE);
+    if (oversized.length > 0) {
+      alert(
+        `다음 파일은 50 MB를 초과하여 제외됩니다:\n${oversized.map((f) => f.name).join("\n")}`
+      );
+      files = files.filter((f) => f.size <= MAX_FILE_SIZE);
+    }
+
+    if (!files.length) {
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+
+    // ② 최대 개수 검사
+    const remaining = MAX_ITEMS - mediaItems.length;
     if (remaining <= 0) {
-      alert(`이미지는 최대 ${MAX_IMAGES}장까지 등록 가능합니다.`);
+      alert(`최대 ${MAX_ITEMS}개까지 등록 가능합니다.`);
       if (fileInputRef.current) fileInputRef.current.value = "";
       return;
     }
 
     const toAdd = files.slice(0, remaining);
     if (files.length > remaining) {
-      alert(`최대 ${MAX_IMAGES}장 제한으로 ${toAdd.length}장만 추가됩니다.`);
+      alert(`최대 ${MAX_ITEMS}개 제한으로 ${toAdd.length}개만 추가됩니다.`);
     }
 
-    const newItems: NewImageItem[] = toAdd.map((file) => ({
+    const newItems: NewMediaItem[] = toAdd.map((file) => ({
       kind:       "new",
       id:         `new-${Date.now()}-${Math.random().toString(36).slice(2)}`,
       file,
       previewUrl: URL.createObjectURL(file),
+      isVideo:    isVideoFile(file),
     }));
 
-    setImageItems((prev) => [...prev, ...newItems]);
-    // 같은 파일을 다시 추가할 수 있도록 input 초기화
+    setMediaItems((prev) => [...prev, ...newItems]);
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
-  // ── 개별 이미지 제거 ─────────────────────────────
+  // 개별 항목 제거
   const removeItem = useCallback((id: string) => {
-    setImageItems((items) => {
+    setMediaItems((items) => {
       const target = items.find((i) => i.id === id);
       if (target?.kind === "new") URL.revokeObjectURL(target.previewUrl);
       return items.filter((i) => i.id !== id);
@@ -259,32 +325,39 @@ function AdminWriteForm() {
     setFormData({ title: "", address: "", rating: "", summary: "" });
     setSido("");
     setSigungu("");
-    setImageItems([]);
+    setMediaItems([]);
+    setUploadProgress(0);
     originalUrlsRef.current = [];
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
-  // ── 제출 ─────────────────────────────────────────
+  // 제출
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setUploading(true);
+    setUploadProgress(0);
 
     try {
-      // 1. 신규 파일 업로드
-      const newItems = imageItems.filter((i): i is NewImageItem => i.kind === "new");
-      const uploadedMap = new Map<string, string>(); // item.id → 업로드된 URL
+      // 1. 신규 파일 순차 업로드 + 진행률
+      const newItems = mediaItems.filter((i): i is NewMediaItem => i.kind === "new");
+      const uploadedMap = new Map<string, string>();
 
       if (newItems.length > 0) {
-        const urls = await uploadImages(newItems.map((i) => i.file));
+        const urls = await uploadFilesWithProgress(
+          newItems.map((i) => i.file),
+          (pct) => setUploadProgress(pct)
+        );
         newItems.forEach((item, idx) => uploadedMap.set(item.id, urls[idx]));
+      } else {
+        setUploadProgress(100);
       }
 
       // 2. 최종 URL 배열 (현재 순서 기준, [0] = 대표)
-      const finalUrls = imageItems.map((item) =>
+      const finalUrls = mediaItems.map((item) =>
         item.kind === "new" ? uploadedMap.get(item.id)! : item.url
       );
 
-      // 3. 편집 모드: 제거된 기존 이미지를 Storage에서 삭제
+      // 3. 편집 모드: 제거된 기존 파일을 Storage에서 삭제
       if (isEditMode && originalUrlsRef.current.length > 0) {
         const removedUrls = originalUrlsRef.current.filter(
           (url) => !finalUrls.includes(url)
@@ -379,47 +452,70 @@ function AdminWriteForm() {
           />
         </div>
 
-        {/* ── 이미지 업로드 ───────────────────────────── */}
+        {/* ── 이미지 / 동영상 업로드 ──────────────────── */}
         <div>
           <div className="flex items-center justify-between mb-2">
             <label className="text-sm font-medium text-slate-700">
-              이미지
+              이미지 / 동영상
               <span className="ml-1.5 text-xs text-slate-400 font-normal">
-                최대 {MAX_IMAGES}장 · 드래그로 순서 변경 · 맨 앞이 대표 이미지
+                최대 {MAX_ITEMS}개 · 파일당 50 MB · 드래그로 순서 변경 · 맨 앞이 대표
               </span>
             </label>
-            <span className={`text-xs font-medium tabular-nums ${imageItems.length >= MAX_IMAGES ? "text-red-500" : "text-slate-400"}`}>
-              {imageItems.length} / {MAX_IMAGES}
+            <span
+              className={`text-xs font-medium tabular-nums
+                ${mediaItems.length >= MAX_ITEMS ? "text-red-500" : "text-slate-400"}`}
+            >
+              {mediaItems.length} / {MAX_ITEMS}
             </span>
           </div>
 
           {/* 파일 선택 버튼 */}
           <label
             className={`flex items-center justify-center gap-2 w-full py-3 border-2 border-dashed rounded-xl cursor-pointer transition-colors
-              ${imageItems.length >= MAX_IMAGES
+              ${mediaItems.length >= MAX_ITEMS
                 ? "border-slate-100 bg-slate-50 text-slate-300 cursor-not-allowed"
                 : "border-slate-200 hover:border-slate-400 hover:bg-slate-50 text-slate-500"}`}
           >
             <ImagePlus className="w-4 h-4" />
             <span className="text-sm font-medium">
-              {imageItems.length >= MAX_IMAGES ? "최대 장수 도달" : "이미지 추가 (여러 장 선택 가능)"}
+              {mediaItems.length >= MAX_ITEMS
+                ? "최대 개수 도달"
+                : "이미지 또는 동영상 추가 (여러 파일 선택 가능)"}
             </span>
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/*"
+              accept="image/*,video/*"
               multiple
-              disabled={imageItems.length >= MAX_IMAGES}
+              disabled={mediaItems.length >= MAX_ITEMS}
               onChange={handleFileChange}
               className="hidden"
             />
           </label>
 
+          {/* 업로드 진행 바 */}
+          {uploading && (
+            <div className="mt-3">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs text-slate-500">업로드 중...</span>
+                <span className="text-xs font-medium text-slate-700 tabular-nums">
+                  {uploadProgress}%
+                </span>
+              </div>
+              <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-slate-800 rounded-full transition-all duration-300"
+                  style={{ width: `${uploadProgress}%` }}
+                />
+              </div>
+            </div>
+          )}
+
           {/* 썸네일 그리드 (DnD) */}
-          {imageItems.length > 0 && (
+          {mediaItems.length > 0 && (
             <div className="mt-4">
               <p className="text-xs text-slate-400 mb-3">
-                ↕ 드래그하여 순서를 바꾸세요. 첫 번째 이미지가 대표로 사용됩니다.
+                ↕ 드래그하여 순서를 바꾸세요. 첫 번째 항목이 대표로 사용됩니다.
               </p>
               <DndContext
                 sensors={sensors}
@@ -427,11 +523,11 @@ function AdminWriteForm() {
                 onDragEnd={handleDragEnd}
               >
                 <SortableContext
-                  items={imageItems.map((i) => i.id)}
+                  items={mediaItems.map((i) => i.id)}
                   strategy={rectSortingStrategy}
                 >
                   <div className="grid grid-cols-3 gap-3">
-                    {imageItems.map((item, index) => (
+                    {mediaItems.map((item, index) => (
                       <SortableThumbnail
                         key={item.id}
                         item={item}
@@ -480,7 +576,7 @@ function AdminWriteForm() {
           <button type="submit" disabled={uploading}
             className="w-full py-4 bg-slate-900 text-white font-semibold rounded-lg hover:bg-slate-800 disabled:bg-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900 focus:ring-offset-2 transition-colors flex items-center justify-center gap-2">
             {uploading && <Loader2 className="w-5 h-5 animate-spin" />}
-            {uploading ? "저장 중..." : isEditMode ? "수정하기" : "등록하기"}
+            {uploading ? `저장 중... (${uploadProgress}%)` : isEditMode ? "수정하기" : "등록하기"}
           </button>
         </div>
       </form>
