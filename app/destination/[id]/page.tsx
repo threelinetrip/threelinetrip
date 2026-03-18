@@ -427,16 +427,15 @@ export default function DestinationDetailPage() {
                 {([5, 4, 3, 2, 1] as const).map((r) => {
                   const isCurrent = Math.round(destination.rating) === r;
                   return (
-                    <div
-                      key={r}
-                      className={`flex items-center gap-2.5 transition-opacity ${
-                        isCurrent ? "opacity-100" : "opacity-40"
-                      }`}
-                    >
-                      {/* 현재 점수 강조 — 좌측 바 */}
+                    /*
+                     * opacity 효과 완전 제거 — 흐릿한 필터 없이
+                     * 텍스트 자체 색상(명도)으로만 위계 표현
+                     */
+                    <div key={r} className="flex items-center gap-2.5">
+                      {/* 현재 점수 강조 — 좌측 검정 바 (opacity 없음) */}
                       <span
                         className={`w-0.5 h-4 rounded-full shrink-0 ${
-                          isCurrent ? "bg-amber-400" : "bg-transparent"
+                          isCurrent ? "bg-black" : "bg-transparent"
                         }`}
                       />
                       {/* 별 */}
@@ -452,7 +451,7 @@ export default function DestinationDetailPage() {
                           />
                         ))}
                       </span>
-                      {/* 가이드 문구 — 채도 색상 */}
+                      {/* 가이드 문구 — 흑백 명도 체계 직접 적용 */}
                       <span className={`text-sm ${getRatingTextColor(r)}`}>
                         {RATING_LABELS[r]}
                       </span>
