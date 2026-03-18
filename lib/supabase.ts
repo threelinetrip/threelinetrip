@@ -40,6 +40,7 @@ export function toDestination(row: Record<string, unknown>): Destination {
     summary: String(row.summary ?? ""),
     rating: Number(row.rating ?? 0),
     imageUrls,
+    imageCredit: row.image_credit ? String(row.image_credit) : undefined,
     viewCount: Number(row.view_count ?? 0),
     shareCount: Number(row.share_count ?? 0),
     createdAt: row.created_at ? String(row.created_at) : undefined,
@@ -59,6 +60,8 @@ export function toDbRow(
     summary: data.summary,
     rating: data.rating,
     image_urls: data.imageUrls,
+    // 빈 문자열은 null 로 저장
+    image_credit: data.imageCredit?.trim() || null,
   };
 }
 

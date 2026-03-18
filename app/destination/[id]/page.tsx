@@ -331,8 +331,9 @@ export default function DestinationDetailPage() {
     <main className="min-h-screen bg-white">
       <div className="max-w-2xl mx-auto px-4 py-8">
 
-        {/* 메인 슬라이더 */}
-        <div className="rounded-xl overflow-hidden mb-6 bg-slate-100">
+        {/* 메인 슬라이더 + 출처 */}
+        <div className="mb-6">
+        <div className="rounded-xl overflow-hidden bg-slate-100">
           {media.length > 0 ? (
             <Swiper
               modules={[Navigation, Pagination]}
@@ -360,6 +361,13 @@ export default function DestinationDetailPage() {
               미디어 없음
             </div>
           )}
+        </div>
+        {/* 이미지 출처 — 값이 있을 때만 표시, 슬라이더 바로 아래 우측 정렬 */}
+        {destination.imageCredit && (
+          <p className="mt-1.5 text-right text-[11px] text-gray-400 leading-none">
+            © {destination.imageCredit}
+          </p>
+        )}
         </div>
 
         {/* 여행지 이름 */}

@@ -194,10 +194,11 @@ function AdminWriteForm() {
   const [sido, setSido]         = useState("");
   const [sigungu, setSigungu]   = useState("");
   const [formData, setFormData] = useState({
-    title:   "",
-    address: "",
-    rating:  "",
-    summary: "",
+    title:       "",
+    address:     "",
+    rating:      "",
+    summary:     "",
+    imageCredit: "",
   });
 
   const [mediaItems, setMediaItems]     = useState<MediaItem[]>([]);
@@ -222,10 +223,11 @@ function AdminWriteForm() {
     fetchDestinationById(editId).then((existing) => {
       if (!existing) return;
       setFormData({
-        title:   existing.title,
-        address: existing.address,
-        rating:  String(existing.rating),
-        summary: existing.summary,
+        title:       existing.title,
+        address:     existing.address,
+        rating:      String(existing.rating),
+        summary:     existing.summary,
+        imageCredit: existing.imageCredit ?? "",
       });
       setSido(existing.sido);
       setSigungu(existing.sigungu);
@@ -323,7 +325,7 @@ function AdminWriteForm() {
   );
 
   const resetForm = () => {
-    setFormData({ title: "", address: "", rating: "", summary: "" });
+    setFormData({ title: "", address: "", rating: "", summary: "", imageCredit: "" });
     setSido("");
     setSigungu("");
     setMediaItems([]);
@@ -368,13 +370,14 @@ function AdminWriteForm() {
 
       // 4. DB 저장
       const payload = {
-        title:     formData.title,
+        title:       formData.title,
         sido,
         sigungu,
-        address:   formData.address,
-        summary:   formData.summary,
-        rating:    formData.rating ? Number(formData.rating) : 5,
-        imageUrls: finalUrls,
+        address:     formData.address,
+        summary:     formData.summary,
+        rating:      formData.rating ? Number(formData.rating) : 5,
+        imageUrls:   finalUrls,
+        imageCredit: formData.imageCredit.trim() || undefined,
       };
 
       if (isEditMode && editId) {
@@ -541,6 +544,26 @@ function AdminWriteForm() {
               </DndContext>
             </div>
           )}
+        </div>
+
+        {/* 이미지 출처 */}
+        <div>
+          <label htmlFor="imageCredit" className="block text-sm font-medium text-slate-700 mb-2">
+            이미지 출처
+            <span className="ml-1.5 text-xs text-slate-400 font-normal">
+              직접 촬영이 아닌 경우 입력 (선택)
+            </span>
+          </label>
+          <input
+            id="imageCredit"
+            type="text"
+            value={formData.imageCredit}
+            onChange={(e) => setFormData((p) => ({ ...p, imageCredit: e.target.value }))}
+            placeholder="예: 한국관광공사, 공공누리 제1유형"
+            className="w-full px-4 py-3 border border-slate-200 rounded-lg focus:outline-none
+                       focus:ring-2 focus:ring-slate-200 focus:border-slate-400
+                       placeholder:text-slate-400"
+          />
         </div>
 
         {/* 평점 */}

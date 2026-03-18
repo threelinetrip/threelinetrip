@@ -31,6 +31,13 @@ export interface Destination {
    */
   imageUrls: string[];
 
+  /**
+   * 이미지 출처 (DB: image_credit text, 선택)
+   * 예: "한국관광공사", "공공누리 제1유형"
+   * 미입력 시 undefined — 상세 페이지에서 조건부 렌더링
+   */
+  imageCredit?: string;
+
   /** 조회수 */
   viewCount: number;
 
