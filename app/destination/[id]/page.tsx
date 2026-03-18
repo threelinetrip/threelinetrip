@@ -259,10 +259,11 @@ export default function DestinationDetailPage() {
   const mainSwiperRef  = useRef<SwiperInstance | null>(null);
   const ratingRef      = useRef<HTMLDivElement>(null);
 
-  const [destination,  setDestination]  = useState<Destination | undefined>(undefined);
-  const [shared,       setShared]        = useState(false);
-  const [lightboxIdx,  setLightboxIdx]   = useState<number | null>(null);
-  const [showGuide,    setShowGuide]     = useState(false);
+  const [destination,    setDestination]    = useState<Destination | undefined>(undefined);
+  const [shared,         setShared]          = useState(false);
+  const [lightboxIdx,    setLightboxIdx]     = useState<number | null>(null);
+  const [showGuide,      setShowGuide]       = useState(false);
+  const [mainCurrentIdx, setMainCurrentIdx]  = useState(0);
 
   // 팝오버 외부 클릭/터치 시 닫기
   useEffect(() => {
@@ -281,9 +282,15 @@ export default function DestinationDetailPage() {
 
   const closeLightbox = useCallback(() => setLightboxIdx(null), []);
 
-  // 슬라이드 이동 시 동영상 정지
-  const handleMainSlideChange = useCallback((swiper: SwiperInstance) => {
+  // 슬라이드 이동 시 동영상 정지 (transition 시작 시점에 멈춰야 부드러움)
+  const handleMainSlideTransition = useCallback((swiper: SwiperInstance) => {
     pauseVideosInSwiper(swiper);
+  }, []);
+
+  // 실제 슬라이드 변경 완료 시 현재 인덱스 추적
+  // onSlideChange 가 realIndex 갱신 직후 호출되어 loop 모드에서 가장 안정적
+  const handleMainSlideChange = useCallback((swiper: SwiperInstance) => {
+    setMainCurrentIdx(swiper.realIndex);
   }, []);
 
   const handleShare = async () => {
@@ -340,8 +347,13 @@ export default function DestinationDetailPage() {
               navigation={media.length > 1}
               pagination={media.length > 1 ? { clickable: true } : false}
               loop={media.length > 1}
-              onSwiper={(s) => { mainSwiperRef.current = s; }}
-              onSlideChangeTransitionStart={handleMainSlideChange}
+              onSwiper={(s) => {
+                mainSwiperRef.current = s;
+                // 초기 인덱스 동기화 (loop 모드에서 안전하게)
+                setMainCurrentIdx(s.realIndex ?? 0);
+              }}
+              onSlideChange={handleMainSlideChange}
+              onSlideChangeTransitionStart={handleMainSlideTransition}
               className="aspect-[4/3] w-full"
             >
               {media.map((url, i) => (
@@ -362,12 +374,15 @@ export default function DestinationDetailPage() {
             </div>
           )}
         </div>
-        {/* 이미지 출처 — 값이 있을 때만 표시, 슬라이더 바로 아래 우측 정렬 */}
-        {destination.imageCredit && (
-          <p className="mt-1.5 text-right text-[11px] text-gray-400 leading-none">
-            © {destination.imageCredit}
-          </p>
-        )}
+        {/* 이미지 출처 — 현재 슬라이드의 출처가 있을 때만 표시 */}
+        {(() => {
+          const credit = (destination.imageCredits ?? [])[mainCurrentIdx];
+          return credit ? (
+            <p className="mt-1.5 text-right text-[11px] text-gray-400 leading-none">
+              © {credit}
+            </p>
+          ) : null;
+        })()}
         </div>
 
         {/* 여행지 이름 */}

@@ -58,12 +58,14 @@ type NewMediaItem = {
   file: File;
   previewUrl: string;
   isVideo: boolean;
+  credit: string;
 };
 type ExistingMediaItem = {
   kind: "existing";
   id: string;
   url: string;
   isVideo: boolean;
+  credit: string;
 };
 type MediaItem = NewMediaItem | ExistingMediaItem;
 
@@ -74,10 +76,12 @@ function SortableThumbnail({
   item,
   index,
   onRemove,
+  onCreditChange,
 }: {
   item: MediaItem;
   index: number;
   onRemove: (id: string) => void;
+  onCreditChange: (id: string, credit: string) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: item.id });
@@ -90,7 +94,7 @@ function SortableThumbnail({
     <div
       ref={setNodeRef}
       style={style}
-      className={`relative rounded-xl overflow-hidden border-2 transition-all duration-150 select-none
+      className={`relative rounded-xl border-2 transition-all duration-150 select-none bg-white
         ${isRep ? "border-amber-400" : "border-slate-200"}
         ${isDragging ? "opacity-40 shadow-2xl ring-2 ring-slate-400" : "opacity-100"}`}
     >
@@ -98,12 +102,10 @@ function SortableThumbnail({
       <div
         {...attributes}
         {...listeners}
-        className="relative aspect-[4/3] bg-slate-100 cursor-grab active:cursor-grabbing touch-none overflow-hidden"
+        className="relative aspect-[4/3] bg-slate-100 cursor-grab active:cursor-grabbing touch-none overflow-hidden rounded-t-[10px]"
         title="드래그하여 순서 변경"
       >
         {item.isVideo ? (
-          // 동영상: preload="metadata" 로 첫 프레임만 로드
-          // pointer-events-none 으로 드래그 이벤트 방해 방지
           <video
             src={src}
             muted
@@ -111,7 +113,6 @@ function SortableThumbnail({
             className="w-full h-full object-contain pointer-events-none"
           />
         ) : item.kind === "new" ? (
-          // 신규 이미지: blob URL → <img>
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={src}
@@ -119,7 +120,6 @@ function SortableThumbnail({
             className="w-full h-full object-contain pointer-events-none"
           />
         ) : (
-          // 기존 이미지: Supabase URL → next/image 최적화
           <Image
             src={src}
             alt={`미디어 ${index + 1}`}
@@ -129,7 +129,6 @@ function SortableThumbnail({
           />
         )}
 
-        {/* 동영상 플레이 아이콘 오버레이 */}
         {item.isVideo && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/20 pointer-events-none">
             <div className="bg-black/50 rounded-full p-2">
@@ -138,20 +137,17 @@ function SortableThumbnail({
           </div>
         )}
 
-        {/* 드래그 핸들 */}
         <div className="absolute bottom-1.5 right-1.5 bg-black/30 rounded p-0.5">
           <GripVertical className="w-3.5 h-3.5 text-white" />
         </div>
       </div>
 
-      {/* 대표 뱃지 (첫 번째 아이템) */}
+      {/* 뱃지 — 이미지 영역 위에 절대 배치 */}
       {isRep && (
         <span className="absolute top-1.5 left-1.5 bg-amber-400 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
           ★ 대표
         </span>
       )}
-
-      {/* 동영상 뱃지 */}
       {item.isVideo && (
         <span
           className={`absolute text-white text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-500
@@ -160,13 +156,9 @@ function SortableThumbnail({
           동영상
         </span>
       )}
-
-      {/* 순서 번호 */}
       <span className="absolute top-1.5 right-8 bg-black/40 text-white text-[10px] px-1.5 py-0.5 rounded">
         {index + 1}
       </span>
-
-      {/* 삭제 버튼 */}
       <button
         type="button"
         onClick={() => onRemove(item.id)}
@@ -176,6 +168,24 @@ function SortableThumbnail({
       >
         <X className="w-3 h-3" />
       </button>
+
+      {/* 출처 입력 — 이미지 영역 아래, 드래그 이벤트 비전파 */}
+      <div
+        className="px-2 pt-1.5 pb-2 border-t border-slate-100"
+        onPointerDown={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
+        onTouchStart={(e) => e.stopPropagation()}
+      >
+        <input
+          type="text"
+          value={item.credit}
+          onChange={(e) => onCreditChange(item.id, e.target.value)}
+          placeholder="출처 입력 (선택)"
+          className="w-full text-[11px] text-slate-600 placeholder:text-slate-300
+                     border-b border-slate-200 bg-transparent focus:outline-none
+                     focus:border-slate-400 pb-0.5"
+        />
+      </div>
     </div>
   );
 }
@@ -194,11 +204,10 @@ function AdminWriteForm() {
   const [sido, setSido]         = useState("");
   const [sigungu, setSigungu]   = useState("");
   const [formData, setFormData] = useState({
-    title:       "",
-    address:     "",
-    rating:      "",
-    summary:     "",
-    imageCredit: "",
+    title:   "",
+    address: "",
+    rating:  "",
+    summary: "",
   });
 
   const [mediaItems, setMediaItems]     = useState<MediaItem[]>([]);
@@ -223,23 +232,24 @@ function AdminWriteForm() {
     fetchDestinationById(editId).then((existing) => {
       if (!existing) return;
       setFormData({
-        title:       existing.title,
-        address:     existing.address,
-        rating:      String(existing.rating),
-        summary:     existing.summary,
-        imageCredit: existing.imageCredit ?? "",
+        title:   existing.title,
+        address: existing.address,
+        rating:  String(existing.rating),
+        summary: existing.summary,
       });
       setSido(existing.sido);
       setSigungu(existing.sigungu);
 
-      const loaded = existing.imageUrls ?? [];
+      const loaded  = existing.imageUrls ?? [];
+      const credits = existing.imageCredits ?? [];
       originalUrlsRef.current = loaded;
       setMediaItems(
-        loaded.map((url) => ({
+        loaded.map((url, idx) => ({
           kind:    "existing" as const,
           id:      `existing-${url}`,
           url,
           isVideo: isVideoUrl(url),
+          credit:  credits[idx] ?? "",
         }))
       );
     });
@@ -261,6 +271,12 @@ function AdminWriteForm() {
         return arrayMove(items, oldIdx, newIdx);
       });
     }
+  }, []);
+
+  const handleCreditChange = useCallback((id: string, credit: string) => {
+    setMediaItems((items) =>
+      items.map((item) => (item.id === id ? { ...item, credit } : item))
+    );
   }, []);
 
   // 파일 선택 (누적 Append)
@@ -301,6 +317,7 @@ function AdminWriteForm() {
       file,
       previewUrl: URL.createObjectURL(file),
       isVideo:    isVideoFile(file),
+      credit:     "",
     }));
 
     setMediaItems((prev) => [...prev, ...newItems]);
@@ -325,7 +342,7 @@ function AdminWriteForm() {
   );
 
   const resetForm = () => {
-    setFormData({ title: "", address: "", rating: "", summary: "", imageCredit: "" });
+    setFormData({ title: "", address: "", rating: "", summary: "" });
     setSido("");
     setSigungu("");
     setMediaItems([]);
@@ -355,9 +372,16 @@ function AdminWriteForm() {
         setUploadProgress(100);
       }
 
-      // 2. 최종 URL 배열 (현재 순서 기준, [0] = 대표)
-      const finalUrls = mediaItems.map((item) =>
+      // 2. 최종 URL 배열 및 출처 배열 (순서 동기화)
+      const finalUrls    = mediaItems.map((item) =>
         item.kind === "new" ? uploadedMap.get(item.id)! : item.url
+      );
+      const finalCredits = mediaItems.map((item) => item.credit?.trim() ?? "");
+
+      // 저장할 image_credit 구조를 콘솔에서 확인 가능
+      console.log(
+        "[저장 확인] image_credit 전송 데이터:",
+        finalUrls.map((url, i) => ({ url, credit: finalCredits[i] }))
       );
 
       // 3. 편집 모드: 제거된 기존 파일을 Storage에서 삭제
@@ -376,8 +400,8 @@ function AdminWriteForm() {
         address:     formData.address,
         summary:     formData.summary,
         rating:      formData.rating ? Number(formData.rating) : 5,
-        imageUrls:   finalUrls,
-        imageCredit: formData.imageCredit.trim() || undefined,
+        imageUrls:    finalUrls,
+        imageCredits: finalCredits,
       };
 
       if (isEditMode && editId) {
@@ -537,6 +561,7 @@ function AdminWriteForm() {
                         item={item}
                         index={index}
                         onRemove={removeItem}
+                        onCreditChange={handleCreditChange}
                       />
                     ))}
                   </div>
@@ -544,26 +569,6 @@ function AdminWriteForm() {
               </DndContext>
             </div>
           )}
-        </div>
-
-        {/* 이미지 출처 */}
-        <div>
-          <label htmlFor="imageCredit" className="block text-sm font-medium text-slate-700 mb-2">
-            이미지 출처
-            <span className="ml-1.5 text-xs text-slate-400 font-normal">
-              직접 촬영이 아닌 경우 입력 (선택)
-            </span>
-          </label>
-          <input
-            id="imageCredit"
-            type="text"
-            value={formData.imageCredit}
-            onChange={(e) => setFormData((p) => ({ ...p, imageCredit: e.target.value }))}
-            placeholder="예: 한국관광공사, 공공누리 제1유형"
-            className="w-full px-4 py-3 border border-slate-200 rounded-lg focus:outline-none
-                       focus:ring-2 focus:ring-slate-200 focus:border-slate-400
-                       placeholder:text-slate-400"
-          />
         </div>
 
         {/* 평점 */}

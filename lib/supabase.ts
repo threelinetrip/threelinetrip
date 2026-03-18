@@ -40,7 +40,31 @@ export function toDestination(row: Record<string, unknown>): Destination {
     summary: String(row.summary ?? ""),
     rating: Number(row.rating ?? 0),
     imageUrls,
-    imageCredit: row.image_credit ? String(row.image_credit) : undefined,
+    // image_credit 컬럼: [{url, credit}] 객체 배열 (jsonb)
+    // → TS 에서는 imageUrls 와 1:1 대응하는 string[] 으로 변환
+    imageCredits: (() => {
+      const raw = row.image_credit;
+
+      // null / undefined / 배열이 아닌 경우
+      if (!Array.isArray(raw) || raw.length === 0) return undefined;
+
+      // [{url, credit}] 객체 배열 포맷 (정상)
+      if (raw[0] !== null && typeof raw[0] === "object") {
+        const credits = (raw as { url?: string; credit?: string }[]).map(
+          (item) => (typeof item.credit === "string" ? item.credit : "")
+        );
+        // 모두 빈 문자열이면 출처 없음으로 간주 → undefined
+        return credits.some((c) => c.length > 0) ? credits : undefined;
+      }
+
+      // string[] 폴백 (혹시 이전 형식이 남아있을 경우)
+      if (typeof raw[0] === "string") {
+        const credits = (raw as string[]).map(String);
+        return credits.some((c) => c.length > 0) ? credits : undefined;
+      }
+
+      return undefined;
+    })(),
     viewCount: Number(row.view_count ?? 0),
     shareCount: Number(row.share_count ?? 0),
     createdAt: row.created_at ? String(row.created_at) : undefined,
@@ -60,8 +84,11 @@ export function toDbRow(
     summary: data.summary,
     rating: data.rating,
     image_urls: data.imageUrls,
-    // 빈 문자열은 null 로 저장
-    image_credit: data.imageCredit?.trim() || null,
+    // [{url, credit}] 객체 배열로 저장 — imageUrls 순서 기준
+    image_credit: (data.imageUrls ?? []).map((url, i) => {
+      const credit = (data.imageCredits ?? [])[i]?.trim() ?? "";
+      return { url, credit };
+    }),
   };
 }
 
@@ -154,7 +181,7 @@ export async function insertDestination(
   data: Omit<Destination, "id" | "viewCount" | "shareCount" | "createdAt" | "updatedAt">
 ): Promise<Destination> {
   const row = toDbRow(data);
-  console.log("[insertDestination] 전송 데이터:", row);
+  console.log("[insertDestination] image_credit 전송:", JSON.stringify(row.image_credit));
   const { data: created, error } = await supabase
     .from("destinations")
     .insert(row)
@@ -170,7 +197,7 @@ export async function updateDestinationById(
   data: Omit<Destination, "id" | "viewCount" | "shareCount" | "createdAt" | "updatedAt">
 ): Promise<Destination> {
   const row = toDbRow(data);
-  console.log("[updateDestinationById] 전송 데이터:", row);
+  console.log("[updateDestinationById] image_credit 전송:", JSON.stringify(row.image_credit));
   const { data: updated, error } = await supabase
     .from("destinations")
     .update(row)

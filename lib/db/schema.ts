@@ -32,11 +32,11 @@ export interface Destination {
   imageUrls: string[];
 
   /**
-   * 이미지 출처 (DB: image_credit text, 선택)
-   * 예: "한국관광공사", "공공누리 제1유형"
-   * 미입력 시 undefined — 상세 페이지에서 조건부 렌더링
+   * 사진별 출처 배열 (DB: image_credit jsonb → [{url, credit}] 객체 배열)
+   * imageCredits[i] 가 imageUrls[i] 의 출처
+   * 빈 문자열 = 해당 사진 출처 없음
    */
-  imageCredit?: string;
+  imageCredits?: string[];
 
   /** 조회수 */
   viewCount: number;
