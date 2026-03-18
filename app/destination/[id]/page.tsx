@@ -365,14 +365,24 @@ export default function DestinationDetailPage() {
         {/* 여행지 이름 */}
         <h1 className="text-2xl font-bold text-slate-900 mb-3">{destination.title}</h1>
 
-        {/* 평점 + 가이드 배지 + 팝오버 */}
+        {/*
+          평점 + 가이드 배지 + 팝오버
+          - 별·점수·배지 영역 자체가 호버/터치 트리거 (별도 "전체 기준" 버튼 없음)
+          - PC: onMouseEnter/Leave 로 팝오버 토글
+          - 모바일: 영역 탭 시 onClick 토글, 바깥 터치 시 닫힘
+        */}
         <div
           ref={ratingRef}
-          className="relative mb-3"
+          className="relative inline-block mb-3 cursor-pointer"
           onMouseEnter={() => setShowGuide(true)}
           onMouseLeave={() => setShowGuide(false)}
+          onClick={() => setShowGuide((v) => !v)}
+          role="button"
+          tabIndex={0}
+          aria-label="평점 기준 보기"
+          onKeyDown={(e) => e.key === "Enter" && setShowGuide((v) => !v)}
         >
-          {/* ── 1행: 별 · 점수 · 가이드 배지 ── */}
+          {/* 별 · 점수 · 가이드 배지 */}
           <div className="flex items-center gap-2 flex-wrap">
             {/* 별 */}
             <span className="flex items-center gap-0.5">
@@ -391,73 +401,53 @@ export default function DestinationDetailPage() {
             <span className="text-base font-medium text-slate-700">
               {destination.rating}점
             </span>
-            {/* 채도 색상 배지 */}
+            {/* 가이드 문구 배지 — 단일 스타일 */}
             {getRatingLabel(destination.rating) && (
-              <span
-                className={`text-sm px-2.5 py-0.5 rounded-full border
-                            ${getRatingBadgeClass(destination.rating)}`}
-              >
+              <span className="text-sm px-2.5 py-0.5 rounded-full border
+                               bg-slate-50 border-slate-200 text-slate-700">
                 {getRatingLabel(destination.rating)}
               </span>
             )}
           </div>
 
-          {/* ── 2행: 전체 기준 토글 버튼 ── */}
-          <button
-            type="button"
-            onClick={() => setShowGuide((v) => !v)}
-            className="mt-1.5 flex items-center gap-1 text-xs text-slate-400
-                       hover:text-slate-600 transition-colors select-none"
-            aria-label="평점 기준 보기"
-          >
-            전체 기준 ›
-          </button>
-
           {/* 팝오버 — 전체 기준표 */}
           {showGuide && (
             <div
-              className="absolute top-full left-0 mt-1 z-[60] bg-white rounded-2xl
-                         shadow-xl border border-slate-100 p-4 min-w-[230px]"
-              onMouseEnter={() => setShowGuide(true)}
+              className="absolute top-full left-0 mt-2 z-[60] bg-white rounded-2xl
+                         shadow-xl border border-slate-100 p-4 min-w-[220px]"
+              onClick={(e) => e.stopPropagation()}   /* 팝오버 클릭이 outer로 전파되지 않도록 */
             >
-              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">
-                평점 기준
-              </p>
-              <div className="space-y-2.5">
-                {([5, 4, 3, 2, 1] as const).map((r) => {
-                  const isCurrent = Math.round(destination.rating) === r;
-                  return (
-                    /*
-                     * opacity 효과 완전 제거 — 흐릿한 필터 없이
-                     * 텍스트 자체 색상(명도)으로만 위계 표현
-                     */
-                    <div key={r} className="flex items-center gap-2.5">
-                      {/* 현재 점수 강조 — 좌측 검정 바 (opacity 없음) */}
-                      <span
-                        className={`w-0.5 h-4 rounded-full shrink-0 ${
-                          isCurrent ? "bg-black" : "bg-transparent"
-                        }`}
-                      />
-                      {/* 별 */}
-                      <span className="flex items-center gap-0.5 shrink-0">
-                        {[1, 2, 3, 4, 5].map((i) => (
-                          <Star
-                            key={i}
-                            className={`w-3.5 h-3.5 ${
-                              i <= r
-                                ? "fill-amber-400 text-amber-400"
-                                : "fill-slate-200 text-slate-200"
-                            }`}
-                          />
-                        ))}
-                      </span>
-                      {/* 가이드 문구 — 흑백 명도 체계 직접 적용 */}
-                      <span className={`text-sm ${getRatingTextColor(r)}`}>
-                        {RATING_LABELS[r]}
-                      </span>
-                    </div>
-                  );
-                })}
+              <p className="text-xs font-medium text-slate-400 mb-3">평점 기준</p>
+              <div className="space-y-2">
+                {([5, 4, 3, 2, 1] as const).map((r) => (
+                  /*
+                   * 강조 효과 없음 — 모든 줄 동일 색상·굵기
+                   * 점수 숫자·문구 모두 표기
+                   */
+                  <div key={r} className="flex items-center gap-2.5">
+                    {/* 별 */}
+                    <span className="flex items-center gap-0.5 shrink-0">
+                      {[1, 2, 3, 4, 5].map((i) => (
+                        <Star
+                          key={i}
+                          className={`w-3.5 h-3.5 ${
+                            i <= r
+                              ? "fill-amber-400 text-amber-400"
+                              : "fill-slate-200 text-slate-200"
+                          }`}
+                        />
+                      ))}
+                    </span>
+                    {/* 점수 번호 */}
+                    <span className="text-sm text-slate-500 shrink-0 tabular-nums">
+                      {r}점
+                    </span>
+                    {/* 가이드 문구 */}
+                    <span className="text-sm text-slate-700">
+                      {RATING_LABELS[r]}
+                    </span>
+                  </div>
+                ))}
               </div>
             </div>
           )}

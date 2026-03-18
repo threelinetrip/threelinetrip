@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { Star, ChevronDown } from "lucide-react";
-import { getRatingLabel, getRatingTextColor } from "@/constants/rating";
+import { RATING_LABELS } from "@/constants/rating";
 
 interface Props {
   selected: number[];
@@ -60,15 +60,19 @@ export default function RatingFilter({ selected, onChange, className = "" }: Pro
 
       {open && (
         /*
-         * min-w-[240px]: "시간이 남으면" 등 긴 문구가 잘리지 않도록
-         * max-w-[90vw]: 모바일에서 화면 밖으로 나가지 않도록
+         * max-w-[calc(100vw-2rem)]: 모바일에서 뷰포트 초과 방지 → 페이지 밀림 없음
+         * min-w-full: 버튼보다 좁아지지 않도록
+         * 모든 텍스트 동일 색상(text-slate-700), 동일 굵기
          */
-        <div className="absolute top-full mt-1 left-0 z-50 bg-white border border-slate-200
-                        rounded-xl shadow-lg py-1.5 min-w-[240px] max-w-[90vw]">
+        <div
+          className="absolute top-full mt-1 left-0 z-50 bg-white border border-slate-200
+                     rounded-xl shadow-lg py-1.5 min-w-full max-w-[calc(100vw-2rem)] w-max"
+        >
           {[5, 4, 3, 2, 1].map((r) => (
             <label
               key={r}
-              className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-slate-50 select-none"
+              className="flex items-center gap-2 px-3 py-2 cursor-pointer
+                         hover:bg-slate-50 select-none"
             >
               {/* 체크박스 */}
               <input
@@ -92,13 +96,11 @@ export default function RatingFilter({ selected, onChange, className = "" }: Pro
                 ))}
               </span>
 
-              {/* 점수 (살짝 작은 크기) */}
+              {/* 점수 */}
               <span className="text-xs text-slate-500 shrink-0 tabular-nums">{r}점</span>
 
-              {/* 가이드 문구 — 좌측 정렬, 채도 색상 */}
-              <span className={`text-xs ${getRatingTextColor(r)}`}>
-                {getRatingLabel(r)}
-              </span>
+              {/* 가이드 문구 — 동일 색상·굵기 */}
+              <span className="text-xs text-slate-700">{RATING_LABELS[r]}</span>
             </label>
           ))}
 
