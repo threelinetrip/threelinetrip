@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { Star, ChevronDown } from "lucide-react";
-import { getRatingLabel } from "@/constants/rating";
+import { getRatingLabel, getRatingTextColor } from "@/constants/rating";
 
 interface Props {
   selected: number[];
@@ -32,7 +32,7 @@ export default function RatingFilter({ selected, onChange, className = "" }: Pro
     );
   };
 
-  const label =
+  const buttonLabel =
     selected.length === 0
       ? "전체 점수"
       : selected.map((r) => `${r}점`).join(", ");
@@ -50,7 +50,7 @@ export default function RatingFilter({ selected, onChange, className = "" }: Pro
             : "bg-gray-50 border-slate-100 text-slate-700 hover:border-slate-200"
         }`}
       >
-        <span className="truncate leading-none">{label}</span>
+        <span className="truncate leading-none">{buttonLabel}</span>
         <ChevronDown
           className={`w-4 h-4 shrink-0 transition-transform duration-150 ${
             open ? "rotate-180" : ""
@@ -59,18 +59,26 @@ export default function RatingFilter({ selected, onChange, className = "" }: Pro
       </button>
 
       {open && (
-        <div className="absolute top-full mt-1 left-0 z-50 bg-white border border-slate-200 rounded-xl shadow-lg py-1.5 w-52">
+        /*
+         * min-w-[240px]: "시간이 남으면" 등 긴 문구가 잘리지 않도록
+         * max-w-[90vw]: 모바일에서 화면 밖으로 나가지 않도록
+         */
+        <div className="absolute top-full mt-1 left-0 z-50 bg-white border border-slate-200
+                        rounded-xl shadow-lg py-1.5 min-w-[240px] max-w-[90vw]">
           {[5, 4, 3, 2, 1].map((r) => (
             <label
               key={r}
-              className="flex items-center gap-2.5 px-3 py-2 cursor-pointer hover:bg-slate-50 text-sm select-none"
+              className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-slate-50 select-none"
             >
+              {/* 체크박스 */}
               <input
                 type="checkbox"
                 checked={selected.includes(r)}
                 onChange={() => toggle(r)}
                 className="w-4 h-4 rounded accent-amber-400 cursor-pointer shrink-0"
               />
+
+              {/* 별 (소형) */}
               <span className="flex items-center gap-0.5 shrink-0">
                 {[1, 2, 3, 4, 5].map((i) => (
                   <Star
@@ -83,10 +91,17 @@ export default function RatingFilter({ selected, onChange, className = "" }: Pro
                   />
                 ))}
               </span>
-              <span className="text-slate-600 shrink-0">{r}점</span>
-              <span className="ml-auto text-xs text-slate-400 truncate">{getRatingLabel(r)}</span>
+
+              {/* 점수 (살짝 작은 크기) */}
+              <span className="text-xs text-slate-500 shrink-0 tabular-nums">{r}점</span>
+
+              {/* 가이드 문구 — 좌측 정렬, 채도 색상 */}
+              <span className={`text-xs ${getRatingTextColor(r)}`}>
+                {getRatingLabel(r)}
+              </span>
             </label>
           ))}
+
           {active && (
             <>
               <div className="border-t border-slate-100 mt-1 pt-1" />
@@ -96,7 +111,8 @@ export default function RatingFilter({ selected, onChange, className = "" }: Pro
                   onChange([]);
                   setOpen(false);
                 }}
-                className="w-full text-left px-3 py-1.5 text-xs text-slate-400 hover:text-slate-600 transition-colors"
+                className="w-full text-left px-3 py-1.5 text-xs text-slate-400
+                           hover:text-slate-600 transition-colors"
               >
                 선택 초기화
               </button>

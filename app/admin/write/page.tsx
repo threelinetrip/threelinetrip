@@ -23,7 +23,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { REGIONS, getSigunguBySido } from "@/constants/regions";
-import { getRatingLabel } from "@/constants/rating";
+import { getRatingLabel, getRatingBadgeClass } from "@/constants/rating";
 import {
   fetchDestinationById,
   insertDestination,
@@ -564,8 +564,10 @@ function AdminWriteForm() {
             <p className="mt-2.5 flex items-center gap-2 text-sm text-slate-500">
               <Star className="w-4 h-4 fill-amber-400 text-amber-400 shrink-0" />
               {formData.rating}점 ·
-              <span className="font-semibold text-amber-700 bg-amber-50 border border-amber-200
-                               px-2.5 py-0.5 rounded-full text-xs">
+              <span
+                className={`text-xs px-2.5 py-0.5 rounded-full border
+                            ${getRatingBadgeClass(Number(formData.rating))}`}
+              >
                 {getRatingLabel(Number(formData.rating))}
               </span>
             </p>

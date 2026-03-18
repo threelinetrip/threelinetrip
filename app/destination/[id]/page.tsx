@@ -16,7 +16,12 @@ import "swiper/css/navigation";
 import "swiper/css/pagination";
 import { fetchDestinationById, insertViewLog } from "@/lib/supabase";
 import type { Destination } from "@/lib/db/schema";
-import { RATING_LABELS, getRatingLabel } from "@/constants/rating";
+import {
+  RATING_LABELS,
+  getRatingLabel,
+  getRatingTextColor,
+  getRatingBadgeClass,
+} from "@/constants/rating";
 
 // ─────────────────────────────────────────────
 // 헬퍼: URL이 동영상인지 판단
@@ -363,17 +368,12 @@ export default function DestinationDetailPage() {
         {/* 평점 + 가이드 배지 + 팝오버 */}
         <div
           ref={ratingRef}
-          className="relative inline-block mb-3"
+          className="relative mb-3"
           onMouseEnter={() => setShowGuide(true)}
           onMouseLeave={() => setShowGuide(false)}
         >
-          {/* 클릭/터치 영역 (모바일 토글) */}
-          <button
-            type="button"
-            onClick={() => setShowGuide((v) => !v)}
-            className="flex items-center gap-2 flex-wrap text-left"
-            aria-label="평점 기준 보기"
-          >
+          {/* ── 1행: 별 · 점수 · 가이드 배지 ── */}
+          <div className="flex items-center gap-2 flex-wrap">
             {/* 별 */}
             <span className="flex items-center gap-0.5">
               {[1, 2, 3, 4, 5].map((i) => (
@@ -391,22 +391,33 @@ export default function DestinationDetailPage() {
             <span className="text-base font-medium text-slate-700">
               {destination.rating}점
             </span>
-            {/* 가이드 문구 배지 */}
+            {/* 채도 색상 배지 */}
             {getRatingLabel(destination.rating) && (
-              <span className="text-sm font-semibold text-amber-700 bg-amber-50
-                               border border-amber-200 px-2.5 py-0.5 rounded-full">
+              <span
+                className={`text-sm px-2.5 py-0.5 rounded-full border
+                            ${getRatingBadgeClass(destination.rating)}`}
+              >
                 {getRatingLabel(destination.rating)}
               </span>
             )}
-            {/* 기준표 힌트 */}
-            <span className="text-xs text-slate-400 select-none">전체 기준 ›</span>
+          </div>
+
+          {/* ── 2행: 전체 기준 토글 버튼 ── */}
+          <button
+            type="button"
+            onClick={() => setShowGuide((v) => !v)}
+            className="mt-1.5 flex items-center gap-1 text-xs text-slate-400
+                       hover:text-slate-600 transition-colors select-none"
+            aria-label="평점 기준 보기"
+          >
+            전체 기준 ›
           </button>
 
           {/* 팝오버 — 전체 기준표 */}
           {showGuide && (
             <div
-              className="absolute top-full left-0 mt-2 z-[60] bg-white rounded-2xl
-                         shadow-xl border border-slate-100 p-4 min-w-[220px]"
+              className="absolute top-full left-0 mt-1 z-[60] bg-white rounded-2xl
+                         shadow-xl border border-slate-100 p-4 min-w-[230px]"
               onMouseEnter={() => setShowGuide(true)}
             >
               <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">
@@ -418,10 +429,17 @@ export default function DestinationDetailPage() {
                   return (
                     <div
                       key={r}
-                      className={`flex items-center gap-2.5 ${
-                        isCurrent ? "opacity-100" : "opacity-50"
+                      className={`flex items-center gap-2.5 transition-opacity ${
+                        isCurrent ? "opacity-100" : "opacity-40"
                       }`}
                     >
+                      {/* 현재 점수 강조 — 좌측 바 */}
+                      <span
+                        className={`w-0.5 h-4 rounded-full shrink-0 ${
+                          isCurrent ? "bg-amber-400" : "bg-transparent"
+                        }`}
+                      />
+                      {/* 별 */}
                       <span className="flex items-center gap-0.5 shrink-0">
                         {[1, 2, 3, 4, 5].map((i) => (
                           <Star
@@ -434,20 +452,10 @@ export default function DestinationDetailPage() {
                           />
                         ))}
                       </span>
-                      <span
-                        className={`text-sm ${
-                          isCurrent
-                            ? "font-bold text-slate-800"
-                            : "text-slate-600"
-                        }`}
-                      >
+                      {/* 가이드 문구 — 채도 색상 */}
+                      <span className={`text-sm ${getRatingTextColor(r)}`}>
                         {RATING_LABELS[r]}
                       </span>
-                      {isCurrent && (
-                        <span className="ml-auto text-xs font-medium text-amber-500 shrink-0">
-                          현재
-                        </span>
-                      )}
                     </div>
                   );
                 })}
