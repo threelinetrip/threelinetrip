@@ -31,13 +31,6 @@ export interface Destination {
    */
   imageUrls: string[];
 
-  /**
-   * 핵심 단일 태그 (DB: main_tag text, 최대 15자)
-   * 예: "가족 여행", "역사 탐방", "야경 명소"
-   * 미입력 시 undefined — 상세 페이지에서 조건부 렌더링
-   */
-  mainTag?: string;
-
   /** 조회수 */
   viewCount: number;
 
