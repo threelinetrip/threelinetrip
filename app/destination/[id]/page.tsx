@@ -357,6 +357,16 @@ export default function DestinationDetailPage() {
           <span className="ml-2 text-base font-medium text-slate-700">{destination.rating}점</span>
         </div>
 
+        {/* 핵심 태그 배지 — 값이 있을 때만 렌더링 (빈 공간 없음) */}
+        {destination.mainTag && (
+          <div className="mb-3">
+            <span className="inline-block bg-slate-100 text-slate-600 text-sm font-medium
+                             px-3 py-1 rounded-full border border-slate-200">
+              {destination.mainTag}
+            </span>
+          </div>
+        )}
+
         {/* 지역 정보 */}
         <div className="flex items-center gap-2 text-slate-500 text-sm mb-8">
           <MapPin className="w-4 h-4 shrink-0" />

@@ -40,6 +40,8 @@ export function toDestination(row: Record<string, unknown>): Destination {
     summary: String(row.summary ?? ""),
     rating: Number(row.rating ?? 0),
     imageUrls,
+    // main_tag: null / undefined → undefined (상세 페이지에서 조건부 렌더링)
+    mainTag: row.main_tag ? String(row.main_tag) : undefined,
     viewCount: Number(row.view_count ?? 0),
     shareCount: Number(row.share_count ?? 0),
     createdAt: row.created_at ? String(row.created_at) : undefined,
@@ -59,7 +61,22 @@ export function toDbRow(
     summary: data.summary,
     rating: data.rating,
     image_urls: data.imageUrls,
+    // 빈 문자열은 null 로 저장 (DB 조회 일관성 유지)
+    main_tag: data.mainTag?.trim() || null,
   };
+}
+
+/** 기존 게시글에서 사용된 태그 목록 반환 (datalist 자동완성용) */
+export async function fetchAllTags(): Promise<string[]> {
+  const { data } = await supabase
+    .from("destinations")
+    .select("main_tag")
+    .not("main_tag", "is", null);
+  if (!data) return [];
+  const tags = data
+    .map((r: { main_tag: string | null }) => r.main_tag)
+    .filter(Boolean) as string[];
+  return [...new Set(tags)].sort((a, b) => a.localeCompare(b));
 }
 
 /**

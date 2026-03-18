@@ -29,6 +29,7 @@ import {
   updateDestinationById,
   uploadFilesWithProgress,
   deleteStorageFiles,
+  fetchAllTags,
 } from "@/lib/supabase";
 
 // ─────────────────────────────────────────────
@@ -197,13 +198,22 @@ function AdminWriteForm() {
     address: "",
     rating:  "",
     summary: "",
+    mainTag: "",
   });
+
+  // 기존 태그 추천 목록 (datalist)
+  const [tagSuggestions, setTagSuggestions] = useState<string[]>([]);
 
   const [mediaItems, setMediaItems]     = useState<MediaItem[]>([]);
   const [uploading, setUploading]       = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
 
   const sigunguList = getSigunguBySido(sido);
+
+  // 기존 태그 추천 목록 로드
+  useEffect(() => {
+    fetchAllTags().then(setTagSuggestions).catch(() => {});
+  }, []);
 
   // 언마운트 시 blob URL 해제
   useEffect(() => {
@@ -225,6 +235,7 @@ function AdminWriteForm() {
         address: existing.address,
         rating:  String(existing.rating),
         summary: existing.summary,
+        mainTag: existing.mainTag ?? "",
       });
       setSido(existing.sido);
       setSigungu(existing.sigungu);
@@ -322,7 +333,7 @@ function AdminWriteForm() {
   );
 
   const resetForm = () => {
-    setFormData({ title: "", address: "", rating: "", summary: "" });
+    setFormData({ title: "", address: "", rating: "", summary: "", mainTag: "" });
     setSido("");
     setSigungu("");
     setMediaItems([]);
@@ -374,6 +385,7 @@ function AdminWriteForm() {
         summary:   formData.summary,
         rating:    formData.rating ? Number(formData.rating) : 5,
         imageUrls: finalUrls,
+        mainTag:   formData.mainTag.trim() || undefined,
       };
 
       if (isEditMode && editId) {
@@ -450,6 +462,55 @@ function AdminWriteForm() {
             placeholder="예: 강원특별자치도 강릉시 연곡면 해변로"
             className="w-full px-4 py-3 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-slate-400 placeholder:text-slate-400"
           />
+        </div>
+
+        {/* 핵심 태그 */}
+        <div>
+          <label htmlFor="mainTag" className="block text-sm font-medium text-slate-700 mb-2">
+            핵심 태그
+            <span className="ml-1.5 text-xs text-slate-400 font-normal">
+              장소의 성격을 한 문구로 (최대 15자, 선택)
+            </span>
+          </label>
+          <div className="relative">
+            <input
+              id="mainTag"
+              type="text"
+              list="tag-suggestions"
+              value={formData.mainTag}
+              maxLength={15}
+              onChange={(e) =>
+                setFormData((p) => ({ ...p, mainTag: e.target.value }))
+              }
+              placeholder="예: 가족과 함께, 역사 탐방, 야경 명소"
+              className="w-full px-4 py-3 border border-slate-200 rounded-lg focus:outline-none
+                         focus:ring-2 focus:ring-slate-200 focus:border-slate-400
+                         placeholder:text-slate-400"
+            />
+            {/* 글자 수 카운터 */}
+            <span
+              className={`absolute right-3 top-1/2 -translate-y-1/2 text-xs tabular-nums
+                ${formData.mainTag.length >= 15 ? "text-red-400" : "text-slate-300"}`}
+            >
+              {formData.mainTag.length}/15
+            </span>
+          </div>
+          {/* 기존 태그 추천 (datalist) */}
+          <datalist id="tag-suggestions">
+            {tagSuggestions.map((tag) => (
+              <option key={tag} value={tag} />
+            ))}
+          </datalist>
+          {/* 미리보기 배지 */}
+          {formData.mainTag.trim() && (
+            <p className="mt-2 flex items-center gap-1.5 text-xs text-slate-500">
+              미리보기:
+              <span className="inline-block bg-slate-100 text-slate-600 text-xs font-medium
+                               px-2.5 py-0.5 rounded-full border border-slate-200">
+                {formData.mainTag.trim()}
+              </span>
+            </p>
+          )}
         </div>
 
         {/* ── 이미지 / 동영상 업로드 ──────────────────── */}
