@@ -560,9 +560,9 @@ function AdminWriteForm() {
           </div>
         </div>
 
-        {/* 세 줄 요약 */}
+        {/* 세 줄 여행 */}
         <div>
-          <label htmlFor="summary" className="block text-sm font-medium text-slate-700 mb-2">세 줄 요약</label>
+          <label htmlFor="summary" className="block text-sm font-medium text-slate-700 mb-2">세 줄 여행</label>
           <textarea id="summary" value={formData.summary}
             onChange={(e) => setFormData((p) => ({ ...p, summary: e.target.value }))}
             placeholder={`여행지를 세 줄로 요약해 주세요.\n각 줄마다 엔터로 구분할 수 있습니다.`}

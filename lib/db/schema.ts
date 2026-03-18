@@ -19,7 +19,7 @@ export interface Destination {
   /** 상세 주소 */
   address: string;
 
-  /** 세줄요약 (3줄로 요약한 여행지 설명) */
+  /** 세 줄 여행 (3줄로 요약한 여행지 설명) */
   summary: string;
 
   /** 평점 (0~5, 소수점 가능) */

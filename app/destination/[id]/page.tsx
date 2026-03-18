@@ -366,11 +366,11 @@ export default function DestinationDetailPage() {
           </span>
         </div>
 
-        {/* 세 줄 요약 */}
+        {/* 세 줄 여행 */}
         <div className="bg-amber-50 rounded-2xl p-6 border border-amber-100 mb-8">
           <div className="flex items-center gap-2 mb-4">
             <Sparkles className="w-5 h-5 text-amber-500" />
-            <h2 className="text-base font-semibold text-slate-800">세 줄 요약</h2>
+            <h2 className="text-base font-bold text-slate-800">세 줄 여행</h2>
           </div>
           <div className="space-y-3">
             {summaryLines.map((line, i) => (
