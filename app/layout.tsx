@@ -10,8 +10,8 @@ const notoSansKR = Noto_Sans_KR({
 });
 
 const SITE_URL = "https://www.thlt.kr";
-const TITLE = "세줄여행 - 세 줄로 만나는 여행지";
-const DESCRIPTION = "세 줄로 기록되는 여행지 정보를 확인하세요!";
+const TITLE = "어디 갈까 고민일 땐 세줄여행";
+const DESCRIPTION = "세 줄로 만나는 여행지";
 const OG_IMAGE = `${SITE_URL}/og-image.jpg`;
 
 export const viewport: Viewport = {
