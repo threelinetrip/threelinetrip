@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { Star, ChevronDown } from "lucide-react";
+import { getRatingLabel } from "@/constants/rating";
 
 interface Props {
   selected: number[];
@@ -58,7 +59,7 @@ export default function RatingFilter({ selected, onChange, className = "" }: Pro
       </button>
 
       {open && (
-        <div className="absolute top-full mt-1 left-0 z-50 bg-white border border-slate-200 rounded-xl shadow-lg py-1.5 w-40">
+        <div className="absolute top-full mt-1 left-0 z-50 bg-white border border-slate-200 rounded-xl shadow-lg py-1.5 w-52">
           {[5, 4, 3, 2, 1].map((r) => (
             <label
               key={r}
@@ -68,9 +69,9 @@ export default function RatingFilter({ selected, onChange, className = "" }: Pro
                 type="checkbox"
                 checked={selected.includes(r)}
                 onChange={() => toggle(r)}
-                className="w-4 h-4 rounded accent-amber-400 cursor-pointer"
+                className="w-4 h-4 rounded accent-amber-400 cursor-pointer shrink-0"
               />
-              <span className="flex items-center gap-1 text-slate-700">
+              <span className="flex items-center gap-0.5 shrink-0">
                 {[1, 2, 3, 4, 5].map((i) => (
                   <Star
                     key={i}
@@ -81,8 +82,9 @@ export default function RatingFilter({ selected, onChange, className = "" }: Pro
                     }`}
                   />
                 ))}
-                <span className="ml-0.5 text-slate-600">{r}점</span>
               </span>
+              <span className="text-slate-600 shrink-0">{r}점</span>
+              <span className="ml-auto text-xs text-slate-400 truncate">{getRatingLabel(r)}</span>
             </label>
           ))}
           {active && (

@@ -23,6 +23,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { REGIONS, getSigunguBySido } from "@/constants/regions";
+import { getRatingLabel } from "@/constants/rating";
 import {
   fetchDestinationById,
   insertDestination,
@@ -558,6 +559,17 @@ function AdminWriteForm() {
               </label>
             ))}
           </div>
+          {/* 선택된 점수 가이드 문구 */}
+          {formData.rating && (
+            <p className="mt-2.5 flex items-center gap-2 text-sm text-slate-500">
+              <Star className="w-4 h-4 fill-amber-400 text-amber-400 shrink-0" />
+              {formData.rating}점 ·
+              <span className="font-semibold text-amber-700 bg-amber-50 border border-amber-200
+                               px-2.5 py-0.5 rounded-full text-xs">
+                {getRatingLabel(Number(formData.rating))}
+              </span>
+            </p>
+          )}
         </div>
 
         {/* 세 줄 여행 */}

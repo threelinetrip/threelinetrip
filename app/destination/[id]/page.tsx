@@ -16,6 +16,7 @@ import "swiper/css/navigation";
 import "swiper/css/pagination";
 import { fetchDestinationById, insertViewLog } from "@/lib/supabase";
 import type { Destination } from "@/lib/db/schema";
+import { RATING_LABELS, getRatingLabel } from "@/constants/rating";
 
 // ─────────────────────────────────────────────
 // 헬퍼: URL이 동영상인지 판단
@@ -250,11 +251,28 @@ export default function DestinationDetailPage() {
   const params = useParams();
   const id = params.id as string;
 
-  const mainSwiperRef = useRef<SwiperInstance | null>(null);
+  const mainSwiperRef  = useRef<SwiperInstance | null>(null);
+  const ratingRef      = useRef<HTMLDivElement>(null);
 
-  const [destination, setDestination] = useState<Destination | undefined>(undefined);
-  const [shared,       setShared]      = useState(false);
-  const [lightboxIdx,  setLightboxIdx] = useState<number | null>(null);
+  const [destination,  setDestination]  = useState<Destination | undefined>(undefined);
+  const [shared,       setShared]        = useState(false);
+  const [lightboxIdx,  setLightboxIdx]   = useState<number | null>(null);
+  const [showGuide,    setShowGuide]     = useState(false);
+
+  // 팝오버 외부 클릭/터치 시 닫기
+  useEffect(() => {
+    const close = (e: MouseEvent | TouchEvent) => {
+      if (ratingRef.current && !ratingRef.current.contains(e.target as Node)) {
+        setShowGuide(false);
+      }
+    };
+    document.addEventListener("mousedown", close);
+    document.addEventListener("touchstart", close);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("touchstart", close);
+    };
+  }, []);
 
   const closeLightbox = useCallback(() => setLightboxIdx(null), []);
 
@@ -342,19 +360,100 @@ export default function DestinationDetailPage() {
         {/* 여행지 이름 */}
         <h1 className="text-2xl font-bold text-slate-900 mb-3">{destination.title}</h1>
 
-        {/* 평점 */}
-        <div className="flex items-center gap-0.5 mb-3">
-          {[1, 2, 3, 4, 5].map((i) => (
-            <Star
-              key={i}
-              className={`w-5 h-5 ${
-                i <= Math.floor(destination.rating)
-                  ? "fill-amber-400 text-amber-400"
-                  : "fill-slate-200 text-slate-200"
-              }`}
-            />
-          ))}
-          <span className="ml-2 text-base font-medium text-slate-700">{destination.rating}점</span>
+        {/* 평점 + 가이드 배지 + 팝오버 */}
+        <div
+          ref={ratingRef}
+          className="relative inline-block mb-3"
+          onMouseEnter={() => setShowGuide(true)}
+          onMouseLeave={() => setShowGuide(false)}
+        >
+          {/* 클릭/터치 영역 (모바일 토글) */}
+          <button
+            type="button"
+            onClick={() => setShowGuide((v) => !v)}
+            className="flex items-center gap-2 flex-wrap text-left"
+            aria-label="평점 기준 보기"
+          >
+            {/* 별 */}
+            <span className="flex items-center gap-0.5">
+              {[1, 2, 3, 4, 5].map((i) => (
+                <Star
+                  key={i}
+                  className={`w-5 h-5 ${
+                    i <= Math.floor(destination.rating)
+                      ? "fill-amber-400 text-amber-400"
+                      : "fill-slate-200 text-slate-200"
+                  }`}
+                />
+              ))}
+            </span>
+            {/* 점수 */}
+            <span className="text-base font-medium text-slate-700">
+              {destination.rating}점
+            </span>
+            {/* 가이드 문구 배지 */}
+            {getRatingLabel(destination.rating) && (
+              <span className="text-sm font-semibold text-amber-700 bg-amber-50
+                               border border-amber-200 px-2.5 py-0.5 rounded-full">
+                {getRatingLabel(destination.rating)}
+              </span>
+            )}
+            {/* 기준표 힌트 */}
+            <span className="text-xs text-slate-400 select-none">전체 기준 ›</span>
+          </button>
+
+          {/* 팝오버 — 전체 기준표 */}
+          {showGuide && (
+            <div
+              className="absolute top-full left-0 mt-2 z-[60] bg-white rounded-2xl
+                         shadow-xl border border-slate-100 p-4 min-w-[220px]"
+              onMouseEnter={() => setShowGuide(true)}
+            >
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">
+                평점 기준
+              </p>
+              <div className="space-y-2.5">
+                {([5, 4, 3, 2, 1] as const).map((r) => {
+                  const isCurrent = Math.round(destination.rating) === r;
+                  return (
+                    <div
+                      key={r}
+                      className={`flex items-center gap-2.5 ${
+                        isCurrent ? "opacity-100" : "opacity-50"
+                      }`}
+                    >
+                      <span className="flex items-center gap-0.5 shrink-0">
+                        {[1, 2, 3, 4, 5].map((i) => (
+                          <Star
+                            key={i}
+                            className={`w-3.5 h-3.5 ${
+                              i <= r
+                                ? "fill-amber-400 text-amber-400"
+                                : "fill-slate-200 text-slate-200"
+                            }`}
+                          />
+                        ))}
+                      </span>
+                      <span
+                        className={`text-sm ${
+                          isCurrent
+                            ? "font-bold text-slate-800"
+                            : "text-slate-600"
+                        }`}
+                      >
+                        {RATING_LABELS[r]}
+                      </span>
+                      {isCurrent && (
+                        <span className="ml-auto text-xs font-medium text-amber-500 shrink-0">
+                          현재
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* 지역 정보 */}
