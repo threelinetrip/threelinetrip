@@ -414,23 +414,19 @@ export default function DestinationDetailPage() {
           {showGuide && (
             <div
               className="absolute top-full left-0 mt-2 z-[60] bg-white rounded-2xl
-                         shadow-xl border border-slate-100 p-4 min-w-[220px]"
-              onClick={(e) => e.stopPropagation()}   /* 팝오버 클릭이 outer로 전파되지 않도록 */
+                         shadow-xl border border-slate-100 p-4 w-max max-w-[90vw]"
+              onClick={(e) => e.stopPropagation()}
             >
-              <p className="text-xs font-medium text-slate-400 mb-3">평점 기준</p>
+              <p className="text-xs font-medium text-slate-400 mb-3 whitespace-nowrap">평점 기준</p>
               <div className="space-y-2">
                 {([5, 4, 3, 2, 1] as const).map((r) => (
-                  /*
-                   * 강조 효과 없음 — 모든 줄 동일 색상·굵기
-                   * 점수 숫자·문구 모두 표기
-                   */
-                  <div key={r} className="flex items-center gap-2.5">
+                  <div key={r} className="flex items-center gap-2.5 whitespace-nowrap">
                     {/* 별 */}
                     <span className="flex items-center gap-0.5 shrink-0">
                       {[1, 2, 3, 4, 5].map((i) => (
                         <Star
                           key={i}
-                          className={`w-3.5 h-3.5 ${
+                          className={`w-3 h-3 ${
                             i <= r
                               ? "fill-amber-400 text-amber-400"
                               : "fill-slate-200 text-slate-200"
@@ -439,11 +435,11 @@ export default function DestinationDetailPage() {
                       ))}
                     </span>
                     {/* 점수 번호 */}
-                    <span className="text-sm text-slate-500 shrink-0 tabular-nums">
+                    <span className="text-[13px] text-slate-500 shrink-0 tabular-nums">
                       {r}점
                     </span>
                     {/* 가이드 문구 */}
-                    <span className="text-sm text-slate-700">
+                    <span className="text-[13px] text-slate-700">
                       {RATING_LABELS[r]}
                     </span>
                   </div>
