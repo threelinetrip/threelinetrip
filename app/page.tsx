@@ -9,8 +9,9 @@ import {
 import { REGIONS, getSigunguBySido } from "@/constants/regions";
 import { fetchAllDestinations, insertViewLog } from "@/lib/supabase";
 import { getRatingLabel } from "@/constants/rating";
-import TagChip, { getTagColor } from "@/components/TagChip";
-import type { Destination } from "@/lib/db/schema";
+import TagChip, { getColors } from "@/components/TagChip";
+import type { Destination, Tag } from "@/lib/db/schema";
+import { tagStringLabel, tagColorFromUnknown, safeLower } from "@/lib/tag-utils";
 
 // ─────────────────────────────────────────────
 // 별점 표시
@@ -83,7 +84,7 @@ function TagFilterDropdown({
 }: {
   value: string;
   onChange: (tag: string) => void;
-  tags: string[];
+  tags: Tag[];
   fullWidth?: boolean;
 }) {
   const [open, setOpen] = useState(false);
@@ -100,6 +101,9 @@ function TagFilterDropdown({
 
   const close = useCallback(() => setOpen(false), []);
 
+  // 현재 선택된 태그 객체 (색상 표시용)
+  const selectedTag = tags.find((t) => t.name === value);
+
   return (
     <div ref={ref} className={`relative ${fullWidth ? "w-full" : "shrink-0"}`}>
       {/* 트리거 버튼 */}
@@ -115,8 +119,8 @@ function TagFilterDropdown({
                     }`}
       >
         <span className="flex-1 text-left truncate">
-          {value
-            ? <TagChip tag={value} size="sm" />
+          {value && selectedTag
+            ? <TagChip tag={selectedTag.name} color={selectedTag.color || undefined} size="sm" />
             : <span className="text-slate-500">전체 태그</span>
           }
         </span>
@@ -145,16 +149,16 @@ function TagFilterDropdown({
           {/* 구분선 */}
           {tags.length > 0 && <hr className="my-1 border-slate-100" />}
 
-          {/* 태그 목록 — 노션 스타일 칩 */}
+          {/* 태그 목록 — 관리자 지정 색상 or 해시 색상 */}
           {tags.map((tag) => {
-            const { bg, fg } = getTagColor(tag);
-            const isSelected = tag === value;
+            const { bg, fg } = getColors(tag.name, tag.color || undefined);
+            const isSelected = tag.name === value;
             return (
               <button
-                key={tag}
+                key={tag.name}
                 type="button"
                 onMouseDown={(e) => e.preventDefault()}
-                onClick={() => { onChange(tag); close(); }}
+                onClick={() => { onChange(tag.name); close(); }}
                 className="w-full flex items-center justify-between gap-2 px-3 py-1.5
                            hover:bg-slate-50 rounded-lg transition-colors"
               >
@@ -162,7 +166,7 @@ function TagFilterDropdown({
                   className="inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-medium"
                   style={{ backgroundColor: bg, color: fg }}
                 >
-                  {tag}
+                  {tag.name}
                 </span>
                 {isSelected && <Check className="w-3.5 h-3.5 shrink-0 text-slate-400" />}
               </button>
@@ -211,26 +215,33 @@ export default function Home() {
     if (urlTag) setTagFilter(urlTag);
   }, []);
 
-  // 전체 고유 태그 (데이터에서 즉시 추출)
-  const allTags = useMemo(() => {
-    const s = new Set<string>();
-    destinations.forEach((d) => (d.tags ?? []).forEach((t) => t && s.add(t)));
-    return Array.from(s).sort((a, b) => a.localeCompare(b));
+  // 전체 고유 태그 — Tag[] (이름 기준 중복 제거, 첫 발견 색상 사용)
+  const allTags = useMemo<Tag[]>(() => {
+    const map = new Map<string, string>(); // name → color
+    destinations.forEach((d) =>
+      (d.tags ?? []).forEach((t) => {
+        const name = tagStringLabel(t);
+        if (name && !map.has(name)) map.set(name, tagColorFromUnknown(t));
+      })
+    );
+    return Array.from(map.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([name, color]) => ({ name, color }));
   }, [destinations]);
 
   // 복합 필터 + 정렬
   const filteredAndSorted = useMemo(() => {
     let result = [...destinations];
 
-    // 검색: 제목 · 지역 · 요약 · 태그
+    // 검색: 제목 · 지역 · 요약 · 태그명
     if (search.trim()) {
-      const q = search.trim().toLowerCase();
+      const q = safeLower(search.trim());
       result = result.filter(
         (d) =>
-          d.title.toLowerCase().includes(q) ||
-          d.summary.toLowerCase().includes(q) ||
-          `${d.sido} ${d.sigungu}`.toLowerCase().includes(q) ||
-          (d.tags ?? []).some((t) => t.toLowerCase().includes(q))
+          safeLower(d.title).includes(q) ||
+          safeLower(d.summary).includes(q) ||
+          safeLower(`${d.sido ?? ""} ${d.sigungu ?? ""}`).includes(q) ||
+          (d.tags ?? []).some((t) => safeLower(tagStringLabel(t)).includes(q))
       );
     }
 
@@ -242,7 +253,9 @@ export default function Home() {
     }
 
     if (tagFilter) {
-      result = result.filter((d) => (d.tags ?? []).includes(tagFilter));
+      result = result.filter((d) =>
+        (d.tags ?? []).some((t) => tagStringLabel(t) === tagFilter)
+      );
     }
 
     if (sortByName) {
@@ -394,7 +407,7 @@ export default function Home() {
 
             {/* ── 좌측: 검색 + 도구 버튼 ── */}
             <div className="flex items-center gap-1.5 shrink-0">
-              <SearchBox extraCls="w-[260px] max-w-[300px]" />
+              <SearchBox extraCls="min-w-[280px] max-w-[350px]" />
               <SortBtn />
               <ResetBtn />
             </div>

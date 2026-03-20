@@ -32,7 +32,9 @@ import {
   deleteStorageFiles,
   fetchAllTags,
 } from "@/lib/supabase";
-import TagChip from "@/components/TagChip";
+import TagChip, { ADMIN_PALETTE, getColors } from "@/components/TagChip";
+import type { Tag } from "@/lib/db/schema";
+import { tagStringLabel, tagColorFromUnknown, safeLower, normalizeTagArray } from "@/lib/tag-utils";
 
 // ─────────────────────────────────────────────
 // 상수 및 헬퍼
@@ -72,7 +74,7 @@ type ExistingMediaItem = {
 type MediaItem = NewMediaItem | ExistingMediaItem;
 
 // ─────────────────────────────────────────────
-// 태그 입력 컴포넌트
+// 태그 입력 컴포넌트 (색상 피커 내장)
 // ─────────────────────────────────────────────
 const MAX_TAGS = 10;
 
@@ -81,51 +83,73 @@ function TagInput({
   onChange,
   allTags,
 }: {
-  tags: string[];
-  onChange: (tags: string[]) => void;
-  allTags: string[];
+  tags: Tag[];
+  onChange: (tags: Tag[]) => void;
+  allTags: Tag[];
 }) {
   const [input, setInput] = useState("");
   const [showDrop, setShowDrop] = useState(false);
+  const [colorPickerFor, setColorPickerFor] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const suggestions = allTags.filter(
-    (t) => t.toLowerCase().includes(input.toLowerCase()) && !tags.includes(t)
-  );
+  // 방어: null/undefined 아이템 제거 후 이름 목록 추출
+  const safeTags = (tags ?? []).filter((t) => t && typeof t.name === "string" && t.name.trim());
+  const tagNames = safeTags.map((t) => t.name);
+
+  // 자동완성: 입력값 포함 & 아직 추가되지 않은 태그
+  const suggestions = (allTags ?? []).filter((t) => {
+    const label = tagStringLabel(t);
+    return (
+      Boolean(label) &&
+      label.toLowerCase().includes(String(input ?? "").toLowerCase()) &&
+      !tagNames.includes(label)
+    );
+  });
 
   const addTag = useCallback(
-    (raw: string) => {
-      const tag = raw.replace(/,/g, "").trim();
-      if (!tag || tags.includes(tag) || tags.length >= MAX_TAGS) return;
-      onChange([...tags, tag]);
+    (raw: string, colorOverride?: string) => {
+      const name = raw.replace(/,/g, "").trim();
+      if (!name || tagNames.includes(name) || safeTags.length >= MAX_TAGS) return;
+      const color = colorOverride ?? "";
+      onChange([...safeTags, { name, color }]);
       setInput("");
       setShowDrop(false);
     },
-    [tags, onChange]
+    [safeTags, tagNames, onChange]
   );
 
   const removeTag = useCallback(
-    (tag: string) => onChange(tags.filter((t) => t !== tag)),
-    [tags, onChange]
+    (name: string) => onChange(safeTags.filter((t) => t.name !== name)),
+    [safeTags, onChange]
+  );
+
+  const updateTagColor = useCallback(
+    (name: string, color: string) => {
+      onChange(safeTags.map((t) => (t.name === name ? { ...t, color } : t)));
+      setColorPickerFor(null);
+    },
+    [safeTags, onChange]
   );
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter" || e.key === ",") {
       e.preventDefault();
       addTag(input);
-    } else if (e.key === "Backspace" && !input && tags.length > 0) {
-      removeTag(tags[tags.length - 1]);
+    } else if (e.key === "Backspace" && !input && safeTags.length > 0) {
+      removeTag(safeTags[safeTags.length - 1].name);
     } else if (e.key === "Escape") {
       setShowDrop(false);
+      setColorPickerFor(null);
     }
   };
 
-  // 외부 클릭 시 드롭다운 닫기
+  // 외부 클릭 시 드롭다운 & 색상 피커 닫기
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         setShowDrop(false);
+        setColorPickerFor(null);
       }
     };
     document.addEventListener("mousedown", handler);
@@ -141,18 +165,84 @@ function TagInput({
                    focus-within:ring-2 focus-within:ring-slate-200 focus-within:border-slate-400"
         onClick={() => inputRef.current?.focus()}
       >
-        {tags.map((tag) => (
-          <TagChip key={tag} tag={tag} onRemove={() => removeTag(tag)} />
-        ))}
+        {safeTags.map((tag) => {
+          const safeName = tag.name || "";
+          const { bg, fg } = getColors(safeName, tag.color || undefined);
+          const isOpen = colorPickerFor === safeName;
+
+          return (
+            <div key={safeName} className="relative inline-block">
+              {/* 칩 본체: 클릭 → 색상 피커 토글 */}
+              <span
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full
+                           text-xs font-medium cursor-pointer select-none
+                           hover:opacity-80 transition-opacity"
+                style={{ backgroundColor: bg, color: fg }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setColorPickerFor(isOpen ? null : safeName);
+                  setShowDrop(false);
+                }}
+                title="클릭해서 색상 변경"
+              >
+                {safeName}
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); removeTag(safeName); }}
+                  className="hover:opacity-60 transition-opacity"
+                  aria-label={`${safeName} 태그 삭제`}
+                >
+                  <X className="w-2.5 h-2.5" />
+                </button>
+              </span>
+
+              {/* 색상 피커 팝오버 */}
+              {isOpen && (
+                <div
+                  className="absolute z-50 top-full mt-1.5 left-0
+                             bg-white border border-slate-200 rounded-2xl shadow-2xl p-3"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <p className="text-[10px] font-medium text-slate-400 mb-2 whitespace-nowrap">
+                    색상 선택 (칩을 다시 클릭하면 닫힘)
+                  </p>
+                  <div className="flex gap-1.5 flex-wrap">
+                    {/* 기본 (자동 배정) */}
+                    <button
+                      type="button"
+                      title="자동 배정"
+                      onClick={() => updateTagColor(safeName, "")}
+                      className={`w-5 h-5 rounded-full border-2 transition-transform hover:scale-110
+                        bg-gradient-to-br from-slate-200 to-slate-300
+                        ${!tag.color ? "border-slate-600 scale-110" : "border-white"}`}
+                    />
+                    {ADMIN_PALETTE.map((p) => (
+                      <button
+                        key={p.bg}
+                        type="button"
+                        title={p.label}
+                        onClick={() => updateTagColor(safeName, p.bg)}
+                        className={`w-5 h-5 rounded-full border-2 transition-transform hover:scale-110
+                          ${tag.color === p.bg ? "border-slate-600 scale-110" : "border-white"}`}
+                        style={{ backgroundColor: p.bg }}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+
         <input
           ref={inputRef}
           type="text"
           value={input}
-          onChange={(e) => { setInput(e.target.value); setShowDrop(true); }}
+          onChange={(e) => { setInput(e.target.value); setShowDrop(true); setColorPickerFor(null); }}
           onKeyDown={handleKeyDown}
           onFocus={() => setShowDrop(true)}
-          placeholder={tags.length === 0 ? "태그 입력 후 Enter 또는 , 로 추가 (최대 10개)" : ""}
-          className="flex-1 min-w-[160px] text-sm outline-none bg-transparent placeholder:text-slate-400"
+          placeholder={safeTags.length === 0 ? "태그 입력 후 Enter 또는 , 로 추가 (최대 10개)" : ""}
+          className="flex-1 min-w-[140px] text-sm outline-none bg-transparent placeholder:text-slate-400"
         />
       </div>
 
@@ -160,25 +250,33 @@ function TagInput({
       {showDrop && suggestions.length > 0 && (
         <div className="absolute z-30 mt-1 w-full bg-white border border-slate-200
                         rounded-lg shadow-lg py-1 max-h-48 overflow-y-auto">
-          {suggestions.map((tag) => (
-            <button
-              key={tag}
-              type="button"
-              onMouseDown={(e) => { e.preventDefault(); addTag(tag); }}
-              className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-slate-50 text-left"
-            >
-              <TagChip tag={tag} />
-            </button>
-          ))}
+          {suggestions.map((tag) => {
+            const name = tagStringLabel(tag);
+            const color = tagColorFromUnknown(tag);
+            return (
+              <button
+                key={name}
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  addTag(name, color);
+                }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-slate-50 text-left"
+              >
+                <TagChip tag={name} color={color || undefined} />
+              </button>
+            );
+          })}
         </div>
       )}
 
-      {/* 태그 수 카운터 */}
-      {tags.length > 0 && (
-        <p className="mt-1 text-right text-xs text-slate-400">
-          {tags.length} / {MAX_TAGS}
-        </p>
-      )}
+      {/* 태그 수 카운터 + 색상 힌트 */}
+      <div className="mt-1 flex items-center justify-between">
+        <p className="text-xs text-slate-400">칩을 클릭하면 색상을 변경할 수 있습니다</p>
+        {safeTags.length > 0 && (
+          <p className="text-xs text-slate-400 tabular-nums">{safeTags.length} / {MAX_TAGS}</p>
+        )}
+      </div>
     </div>
   );
 }
@@ -324,8 +422,8 @@ function AdminWriteForm() {
     summary: "",
   });
 
-  const [tags, setTags]                 = useState<string[]>([]);
-  const [allTags, setAllTags]           = useState<string[]>([]);
+  const [tags, setTags]                 = useState<Tag[]>([]);
+  const [allTags, setAllTags]           = useState<Tag[]>([]);
   const [mediaItems, setMediaItems]     = useState<MediaItem[]>([]);
   const [uploading, setUploading]       = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -334,7 +432,17 @@ function AdminWriteForm() {
 
   // 기존 태그 목록 로드 (자동완성용)
   useEffect(() => {
-    fetchAllTags().then(setAllTags).catch(() => {});
+    fetchAllTags()
+      .then((tags) => {
+        if (process.env.NODE_ENV === "development") {
+          console.log("[AdminWrite] fetchAllTags 결과:", tags);
+        }
+        setAllTags(normalizeTagArray(tags));
+      })
+      .catch((err) => {
+        console.error("[AdminWrite] fetchAllTags 오류:", err);
+        setAllTags([]);
+      });
   }, []);
 
   // 언마운트 시 blob URL 해제
@@ -350,31 +458,56 @@ function AdminWriteForm() {
   // 수정 모드 초기값 세팅
   useEffect(() => {
     if (!editId) return;
-    fetchDestinationById(editId).then((existing) => {
-      if (!existing) return;
-      setFormData({
-        title:   existing.title,
-        address: existing.address,
-        rating:  String(existing.rating),
-        summary: existing.summary,
-      });
-      setSido(existing.sido);
-      setSigungu(existing.sigungu);
-      setTags(existing.tags ?? []);
 
-      const loaded  = existing.imageUrls ?? [];
-      const credits = existing.imageCredits ?? [];
-      originalUrlsRef.current = loaded;
-      setMediaItems(
-        loaded.map((url, idx) => ({
-          kind:    "existing" as const,
-          id:      `existing-${url}`,
-          url,
-          isVideo: isVideoUrl(url),
-          credit:  credits[idx] ?? "",
-        }))
-      );
-    });
+    fetchDestinationById(editId)
+      .then((existing) => {
+        if (!existing) {
+          console.warn("[AdminWrite] editId로 데이터를 찾지 못함:", editId);
+          return;
+        }
+
+        if (process.env.NODE_ENV === "development") {
+          console.log("[AdminWrite] 불러온 데이터:", {
+            id:           existing.id,
+            title:        existing.title,
+            tags:         existing.tags,
+            imageCredits: existing.imageCredits,
+            imageUrls:    existing.imageUrls?.length,
+          });
+        }
+
+        setFormData({
+          title:   String(existing.title ?? ""),
+          address: String(existing.address ?? ""),
+          rating:  String(existing.rating ?? ""),
+          summary: String(existing.summary ?? ""),
+        });
+        setSido(String(existing.sido ?? ""));
+        setSigungu(String(existing.sigungu ?? ""));
+
+        // 태그: string | 객체 혼합 → 항상 Tag[] 로 정규화
+        setTags(normalizeTagArray(existing.tags));
+
+        // 미디어 아이템: imageCredits 방어 처리
+        const loaded  = Array.isArray(existing.imageUrls) ? existing.imageUrls : [];
+        const credits = Array.isArray(existing.imageCredits) ? existing.imageCredits : [];
+        originalUrlsRef.current = loaded;
+
+        setMediaItems(
+          loaded
+            .filter((url) => typeof url === "string" && url)
+            .map((url, idx) => ({
+              kind:    "existing" as const,
+              id:      `existing-${url}`,
+              url:     String(url),
+              isVideo: isVideoUrl(String(url)),
+              credit:  String(credits[idx] ?? ""),
+            }))
+        );
+      })
+      .catch((err) => {
+        console.error("[AdminWrite] 데이터 로딩 오류:", err);
+      });
   }, [editId]);
 
   // dnd-kit 센서
@@ -664,7 +797,7 @@ function AdminWriteForm() {
           )}
 
           {/* 썸네일 그리드 (DnD) */}
-          {mediaItems.length > 0 && (
+          {Array.isArray(mediaItems) && mediaItems.length > 0 && (
             <div className="mt-4">
               <p className="text-xs text-slate-400 mb-3">
                 ↕ 드래그하여 순서를 바꾸세요. 첫 번째 항목이 대표로 사용됩니다.
@@ -675,11 +808,11 @@ function AdminWriteForm() {
                 onDragEnd={handleDragEnd}
               >
                 <SortableContext
-                  items={mediaItems.map((i) => i.id)}
+                  items={(Array.isArray(mediaItems) ? mediaItems : []).map((i) => i.id)}
                   strategy={rectSortingStrategy}
                 >
                   <div className="grid grid-cols-3 gap-3">
-                    {mediaItems.map((item, index) => (
+                    {(Array.isArray(mediaItems) ? mediaItems : []).map((item, index) => (
                       <SortableThumbnail
                         key={item.id}
                         item={item}

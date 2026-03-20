@@ -3,6 +3,16 @@
  * destinations: 여행지 정보를 저장하는 테이블
  */
 
+/**
+ * 태그 하나의 구조
+ * - name: 태그 텍스트
+ * - color: 관리자 지정 배경 색상 hex (예: "#FBECDD"). 빈 문자열 = 해시 자동 배정
+ */
+export type Tag = {
+  name: string;
+  color: string;
+};
+
 export interface Destination {
   /** 고유 ID (UUID 권장) */
   id: string;
@@ -39,10 +49,10 @@ export interface Destination {
   imageCredits?: string[];
 
   /**
-   * 태그 배열 (DB: tags text[])
-   * 예: ["해변", "일출", "드라이브"]
+   * 태그 배열 (DB: tags jsonb → [{name, color}] 객체 배열)
+   * color 는 관리자가 지정한 파스텔 bg 색상 hex (빈 문자열 = 해시 자동 배정)
    */
-  tags?: string[];
+  tags?: Tag[];
 
   /** 조회수 */
   viewCount: number;

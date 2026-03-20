@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import type { Destination } from "@/lib/db/schema";
+import type { Destination, Tag } from "@/lib/db/schema";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -25,72 +25,167 @@ function toErrorMessage(err: unknown): string {
 }
 
 /**
+ * image_credit 컬럼 → string[] 변환 (모든 형식 안전 처리)
+ * - null / undefined           → []
+ * - 단일 문자열 "출처명"         → ["출처명"]
+ * - string[]                   → 그대로
+ * - [{url, credit}] 객체 배열   → credit 값만 추출
+ * - 기타 예상치 못한 형식        → []
+ */
+function parseImageCredits(raw: unknown): string[] {
+  try {
+    if (raw === null || raw === undefined) return [];
+
+    // 단일 문자열 → 배열로 감싸기
+    if (typeof raw === "string") {
+      return raw.trim() ? [raw.trim()] : [];
+    }
+
+    if (!Array.isArray(raw)) return [];
+    if (raw.length === 0) return [];
+
+    const first = raw[0];
+
+    // [{url, credit}] 객체 배열 (jsonb 정상 포맷)
+    if (first !== null && typeof first === "object") {
+      return (raw as { url?: unknown; credit?: unknown }[]).map((item) => {
+        if (!item || typeof item !== "object") return "";
+        const credit = (item as Record<string, unknown>).credit;
+        return typeof credit === "string" ? credit : String(credit ?? "");
+      });
+    }
+
+    // string[] (구버전 또는 직접 배열)
+    if (typeof first === "string") {
+      return (raw as unknown[]).map((v) => (typeof v === "string" ? v : String(v ?? "")));
+    }
+
+    return [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * tags 컬럼 → Tag[] 변환 (신버전 jsonb + 구버전 text[] 모두 안전 처리)
+ */
+function parseTags(raw: unknown): Tag[] {
+  try {
+    if (!Array.isArray(raw) || raw.length === 0) return [];
+
+    const result: Tag[] = [];
+    for (const item of raw) {
+      if (item === null || item === undefined) continue;
+
+      // 신버전: {name, color} 객체
+      if (typeof item === "object" && "name" in (item as object)) {
+        const t = item as { name?: unknown; color?: unknown };
+        const name = String(t.name ?? "").trim();
+        if (!name) continue;
+        result.push({ name, color: String(t.color ?? "") });
+        continue;
+      }
+
+      // 구버전 폴백: 단순 string
+      if (typeof item === "string" && item.trim()) {
+        result.push({ name: item.trim(), color: "" });
+      }
+    }
+    return result;
+  } catch {
+    return [];
+  }
+}
+
+/**
  * DB 컬럼(snake_case) → 앱 타입(camelCase) 변환
- * DB에는 image_urls(jsonb) 만 존재. imageUrls[0] 이 대표 이미지.
+ * - 전체를 try-catch 로 감싸 파싱 오류가 앱을 죽이지 않도록 처리
  */
 export function toDestination(row: Record<string, unknown>): Destination {
-  const rawUrls = row.image_urls;
-  const imageUrls: string[] = Array.isArray(rawUrls) ? (rawUrls as string[]) : [];
-  return {
-    id: String(row.id),
-    title: String(row.title ?? ""),
-    sido: String(row.sido ?? ""),
-    sigungu: String(row.sigungu ?? ""),
-    address: String(row.address ?? ""),
-    summary: String(row.summary ?? ""),
-    rating: Number(row.rating ?? 0),
-    imageUrls,
-    // image_credit 컬럼: [{url, credit}] 객체 배열 (jsonb)
-    // → TS 에서는 imageUrls 와 1:1 대응하는 string[] 으로 변환
-    imageCredits: (() => {
-      const raw = row.image_credit;
+  try {
+    if (process.env.NODE_ENV === "development") {
+      console.log("[toDestination] raw row:", {
+        id: row.id,
+        title: row.title,
+        image_credit: row.image_credit,
+        tags: row.tags,
+        image_urls: Array.isArray(row.image_urls) ? `[${(row.image_urls as unknown[]).length}개]` : row.image_urls,
+      });
+    }
 
-      // null / undefined / 배열이 아닌 경우
-      if (!Array.isArray(raw) || raw.length === 0) return undefined;
+    const rawUrls = row.image_urls;
+    const imageUrls: string[] = Array.isArray(rawUrls)
+      ? (rawUrls as unknown[]).map((u) => String(u ?? "")).filter(Boolean)
+      : [];
 
-      // [{url, credit}] 객체 배열 포맷 (정상)
-      if (raw[0] !== null && typeof raw[0] === "object") {
-        const credits = (raw as { url?: string; credit?: string }[]).map(
-          (item) => (typeof item.credit === "string" ? item.credit : "")
-        );
-        // 모두 빈 문자열이면 출처 없음으로 간주 → undefined
-        return credits.some((c) => c.length > 0) ? credits : undefined;
-      }
+    const rawCredits = parseImageCredits(row.image_credit);
+    // 모두 빈 문자열이면 출처 없음 → undefined
+    const imageCredits =
+      rawCredits.length > 0 && rawCredits.some((c) => c.trim().length > 0)
+        ? rawCredits
+        : undefined;
 
-      // string[] 폴백 (혹시 이전 형식이 남아있을 경우)
-      if (typeof raw[0] === "string") {
-        const credits = (raw as string[]).map(String);
-        return credits.some((c) => c.length > 0) ? credits : undefined;
-      }
-
-      return undefined;
-    })(),
-    tags: Array.isArray(row.tags) ? (row.tags as string[]) : [],
-    viewCount: Number(row.view_count ?? 0),
-    shareCount: Number(row.share_count ?? 0),
-    createdAt: row.created_at ? String(row.created_at) : undefined,
-    updatedAt: row.updated_at ? String(row.updated_at) : undefined,
-  };
+    return {
+      id:       String(row.id ?? ""),
+      title:    String(row.title ?? ""),
+      sido:     String(row.sido ?? ""),
+      sigungu:  String(row.sigungu ?? ""),
+      address:  String(row.address ?? ""),
+      summary:  String(row.summary ?? ""),
+      rating:   Number(row.rating ?? 0),
+      imageUrls,
+      imageCredits,
+      tags:      parseTags(row.tags),
+      viewCount: Number(row.view_count ?? 0),
+      shareCount: Number(row.share_count ?? 0),
+      createdAt: row.created_at ? String(row.created_at) : undefined,
+      updatedAt: row.updated_at ? String(row.updated_at) : undefined,
+    };
+  } catch (err) {
+    console.error("[toDestination] 파싱 오류, 빈 객체 반환:", err, "\nrow:", row);
+    // 최소한의 안전한 값 반환 (앱 크래시 방지)
+    return {
+      id:         String(row?.id ?? "error"),
+      title:      String(row?.title ?? ""),
+      sido:       String(row?.sido ?? ""),
+      sigungu:    String(row?.sigungu ?? ""),
+      address:    String(row?.address ?? ""),
+      summary:    String(row?.summary ?? ""),
+      rating:     0,
+      imageUrls:  [],
+      imageCredits: undefined,
+      tags:       [],
+      viewCount:  0,
+      shareCount: 0,
+    };
+  }
 }
 
 /** 앱 타입(camelCase) → DB 컬럼(snake_case) 변환 */
 export function toDbRow(
   data: Omit<Destination, "id" | "viewCount" | "shareCount" | "createdAt" | "updatedAt">
 ) {
+  const safeUrls    = Array.isArray(data.imageUrls)    ? data.imageUrls    : [];
+  const safeCredits = Array.isArray(data.imageCredits) ? data.imageCredits : [];
+  const safeTags    = Array.isArray(data.tags)          ? data.tags          : [];
+
   return {
-    title: data.title,
-    sido: data.sido,
-    sigungu: data.sigungu,
-    address: data.address,
-    summary: data.summary,
-    rating: data.rating,
-    image_urls: data.imageUrls,
+    title:   String(data.title   ?? ""),
+    sido:    String(data.sido    ?? ""),
+    sigungu: String(data.sigungu ?? ""),
+    address: String(data.address ?? ""),
+    summary: String(data.summary ?? ""),
+    rating:  Number(data.rating  ?? 0),
+    image_urls: safeUrls,
     // [{url, credit}] 객체 배열로 저장 — imageUrls 순서 기준
-    image_credit: (data.imageUrls ?? []).map((url, i) => {
-      const credit = (data.imageCredits ?? [])[i]?.trim() ?? "";
-      return { url, credit };
-    }),
-    tags: data.tags ?? [],
+    image_credit: safeUrls.map((url, i) => ({
+      url,
+      credit: String(safeCredits[i] ?? "").trim(),
+    })),
+    // tags jsonb: [{name, color}] 객체 배열로 저장
+    tags: safeTags
+      .filter((t) => t && typeof t.name === "string" && t.name.trim())
+      .map((t) => ({ name: t.name.trim(), color: String(t.color ?? "") })),
   };
 }
 
@@ -157,19 +252,43 @@ export async function deleteStorageFiles(urls: string[]): Promise<void> {
   if (error) console.warn("[Storage 파일 삭제 실패]", toErrorMessage(error));
 }
 
-/** 저장된 모든 고유 태그 조회 (자동완성용) */
-export async function fetchAllTags(): Promise<string[]> {
+/**
+ * 저장된 모든 고유 태그 조회 (자동완성용)
+ * - 이름 기준으로 중복 제거, 첫 번째 발견된 color 를 사용
+ * - 반환: Tag[] ({name, color}[])
+ */
+export async function fetchAllTags(): Promise<Tag[]> {
   const { data, error } = await supabase
     .from("destinations")
     .select("tags");
   if (error) return [];
-  const tagSet = new Set<string>();
+
+  const tagMap = new Map<string, string>(); // name → color (첫 발견 색상)
   (data ?? []).forEach((row) => {
-    if (Array.isArray(row.tags)) {
-      (row.tags as string[]).forEach((t) => t && tagSet.add(t));
+    if (!Array.isArray(row.tags)) return;
+    for (const item of row.tags as unknown[]) {
+      if (item === null || item === undefined) continue;
+
+      // 신버전: {name, color} 객체
+      if (typeof item === "object" && "name" in (item as object)) {
+        const t = item as { name?: unknown; color?: unknown };
+        const name = String(t.name ?? "").trim();
+        if (!name) continue;
+        if (!tagMap.has(name)) tagMap.set(name, String(t.color ?? ""));
+        continue;
+      }
+
+      // 구버전 폴백: string
+      if (typeof item === "string" && item.trim()) {
+        const name = item.trim();
+        if (!tagMap.has(name)) tagMap.set(name, "");
+      }
     }
   });
-  return Array.from(tagSet).sort((a, b) => a.localeCompare(b));
+
+  return Array.from(tagMap.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([name, color]) => ({ name, color }));
 }
 
 /** 전체 여행지 조회 */
@@ -184,13 +303,25 @@ export async function fetchAllDestinations(): Promise<Destination[]> {
 
 /** ID로 단일 여행지 조회 */
 export async function fetchDestinationById(id: string): Promise<Destination | null> {
-  const { data, error } = await supabase
-    .from("destinations")
-    .select("*")
-    .eq("id", id)
-    .single();
-  if (error) return null;
-  return toDestination(data);
+  try {
+    const { data, error } = await supabase
+      .from("destinations")
+      .select("*")
+      .eq("id", id)
+      .single();
+    if (error) {
+      console.warn("[fetchDestinationById] DB 오류:", toErrorMessage(error));
+      return null;
+    }
+    if (!data) return null;
+    if (process.env.NODE_ENV === "development") {
+      console.log("[fetchDestinationById] 원본 데이터:", data);
+    }
+    return toDestination(data as Record<string, unknown>);
+  } catch (err) {
+    console.error("[fetchDestinationById] 예외:", err);
+    return null;
+  }
 }
 
 /** 여행지 등록 */

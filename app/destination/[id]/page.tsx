@@ -485,15 +485,18 @@ export default function DestinationDetailPage() {
         </div>
 
         {/* 태그 */}
-        {(destination.tags ?? []).length > 0 && (
+        {(destination.tags ?? []).filter((t) => t?.name).length > 0 && (
           <div className="flex flex-wrap gap-1.5 mb-6">
-            {destination.tags!.map((tag) => (
-              <TagChip
-                key={tag}
-                tag={tag}
-                onClick={() => router.push(`/?tag=${encodeURIComponent(tag)}`)}
-              />
-            ))}
+            {destination.tags!
+              .filter((tag) => tag?.name?.trim())
+              .map((tag) => (
+                <TagChip
+                  key={tag.name}
+                  tag={tag.name}
+                  color={tag.color || undefined}
+                  onClick={() => router.push(`/?tag=${encodeURIComponent(tag.name)}`)}
+                />
+              ))}
           </div>
         )}
 

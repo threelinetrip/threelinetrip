@@ -2,8 +2,10 @@
 
 import { X } from "lucide-react";
 
-// 파스텔 팔레트 — 태그 텍스트 해시로 결정론적 색상 배정
-const PALETTE = [
+// ─────────────────────────────────────────────
+// 해시 기반 자동 팔레트 (색상 미지정 태그용)
+// ─────────────────────────────────────────────
+const HASH_PALETTE = [
   { bg: "#FEE2E2", fg: "#9F1239" },
   { bg: "#FFEDD5", fg: "#9A3412" },
   { bg: "#FEF9C3", fg: "#854D0E" },
@@ -18,14 +20,52 @@ const PALETTE = [
   { bg: "#FFFBEB", fg: "#78350F" },
 ];
 
-export function getTagColor(tag: string): { bg: string; fg: string } {
+/** 태그 텍스트 해시로 결정론적 색상 배정 (빈 값·undefined 안전) */
+export function getTagColor(tag: string | undefined | null): { bg: string; fg: string } {
+  if (!tag) return HASH_PALETTE[0];
   let h = 0;
   for (const ch of tag) h = ((h * 31) + ch.charCodeAt(0)) & 0xffff;
-  return PALETTE[h % PALETTE.length];
+  return HASH_PALETTE[h % HASH_PALETTE.length];
 }
 
+// ─────────────────────────────────────────────
+// 관리자 색상 피커용 노션 스타일 팔레트
+// ─────────────────────────────────────────────
+export const ADMIN_PALETTE: { label: string; bg: string; fg: string }[] = [
+  { label: "회색",   bg: "#F1F1EF", fg: "#787774" },
+  { label: "갈색",   bg: "#F4EEEE", fg: "#9F6B53" },
+  { label: "주황",   bg: "#FBECDD", fg: "#D9730D" },
+  { label: "노랑",   bg: "#FBF3DB", fg: "#CB912F" },
+  { label: "초록",   bg: "#EEF3ED", fg: "#448361" },
+  { label: "파랑",   bg: "#E7F3F8", fg: "#337EA9" },
+  { label: "보라",   bg: "#F4EEFC", fg: "#9065B0" },
+  { label: "분홍",   bg: "#FCE8F3", fg: "#C14C8A" },
+  { label: "빨강",   bg: "#FFE2DD", fg: "#C4433C" },
+];
+
+/**
+ * 색상 결정 함수 (undefined·null 완전 안전)
+ * - colorBg 가 지정된 경우 ADMIN_PALETTE 에서 fg 를 조회해 반환
+ * - colorBg 가 없으면 해시 기반 색상 반환
+ */
+export function getColors(
+  tag: string | undefined | null,
+  colorBg?: string | null
+): { bg: string; fg: string } {
+  if (colorBg) {
+    const entry = ADMIN_PALETTE.find((p) => p.bg === colorBg);
+    return entry ? { bg: entry.bg, fg: entry.fg } : { bg: colorBg, fg: "#444444" };
+  }
+  return getTagColor(tag);
+}
+
+// ─────────────────────────────────────────────
+// TagChip 컴포넌트
+// ─────────────────────────────────────────────
 type Props = {
   tag: string;
+  /** 관리자 지정 배경 색상 hex (없으면 해시 자동 배정) */
+  color?: string;
   /** 관리자 입력: X 버튼으로 개별 삭제 */
   onRemove?: () => void;
   /** 메인/상세 페이지: 클릭으로 태그 필터 */
@@ -33,8 +73,9 @@ type Props = {
   size?: "sm" | "md";
 };
 
-export default function TagChip({ tag, onRemove, onClick, size = "md" }: Props) {
-  const { bg, fg } = getTagColor(tag);
+export default function TagChip({ tag, color, onRemove, onClick, size = "md" }: Props) {
+  const safeName = tag || "";
+  const { bg, fg } = getColors(safeName, color || undefined);
   const padding = size === "sm" ? "px-2 py-0.5 text-[11px]" : "px-2.5 py-1 text-xs";
 
   return (
@@ -48,7 +89,7 @@ export default function TagChip({ tag, onRemove, onClick, size = "md" }: Props) 
       tabIndex={onClick ? 0 : undefined}
       onKeyDown={onClick ? (e) => e.key === "Enter" && onClick() : undefined}
     >
-      {tag}
+      {safeName}
       {onRemove && (
         <button
           type="button"
