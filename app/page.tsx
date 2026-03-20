@@ -353,7 +353,7 @@ export default function Home() {
 
       {/* ── 필터 바 ── */}
       <div className="sticky top-14 z-40 bg-white/95 backdrop-blur-md border-b border-slate-100">
-        <div className="max-w-7xl mx-auto px-3 sm:px-6 py-2">
+        <div className="max-w-6xl mx-auto px-3 sm:px-6 py-2">
 
           {/* ────────────────────────────────────────
               모바일 전용 레이아웃 (sm 미만)
@@ -390,20 +390,17 @@ export default function Home() {
               PC 전용 레이아웃 (sm 이상) — 단일 행
               [좌] 검색 · ↕ · ⟳   [우] 시/도 · 시/군/구 · 점수 · 태그
           ──────────────────────────────────────── */}
-          <div className="hidden sm:flex sm:items-center sm:gap-3">
+          <div className="hidden sm:flex sm:items-center sm:justify-between sm:gap-4">
 
-            {/* ── 좌측 그룹: 검색 + 도구 버튼 ── */}
+            {/* ── 좌측: 검색 + 도구 버튼 ── */}
             <div className="flex items-center gap-1.5 shrink-0">
               <SearchBox extraCls="w-[260px] max-w-[300px]" />
               <SortBtn />
               <ResetBtn />
             </div>
 
-            {/* 구분선 */}
-            <div className="h-5 w-px bg-slate-200 shrink-0" />
-
-            {/* ── 우측 그룹: 상세 필터 ── */}
-            <div className="flex items-center gap-2 flex-wrap">
+            {/* ── 우측: 상세 필터 ── */}
+            <div className="flex items-center gap-2">
               <SidoSelect />
               <SigunguSelect />
               <RatingSelect />
