@@ -65,6 +65,7 @@ export function toDestination(row: Record<string, unknown>): Destination {
 
       return undefined;
     })(),
+    tags: Array.isArray(row.tags) ? (row.tags as string[]) : [],
     viewCount: Number(row.view_count ?? 0),
     shareCount: Number(row.share_count ?? 0),
     createdAt: row.created_at ? String(row.created_at) : undefined,
@@ -89,6 +90,7 @@ export function toDbRow(
       const credit = (data.imageCredits ?? [])[i]?.trim() ?? "";
       return { url, credit };
     }),
+    tags: data.tags ?? [],
   };
 }
 
@@ -153,6 +155,21 @@ export async function deleteStorageFiles(urls: string[]): Promise<void> {
 
   const { error } = await supabase.storage.from(BUCKET).remove(paths);
   if (error) console.warn("[Storage 파일 삭제 실패]", toErrorMessage(error));
+}
+
+/** 저장된 모든 고유 태그 조회 (자동완성용) */
+export async function fetchAllTags(): Promise<string[]> {
+  const { data, error } = await supabase
+    .from("destinations")
+    .select("tags");
+  if (error) return [];
+  const tagSet = new Set<string>();
+  (data ?? []).forEach((row) => {
+    if (Array.isArray(row.tags)) {
+      (row.tags as string[]).forEach((t) => t && tagSet.add(t));
+    }
+  });
+  return Array.from(tagSet).sort((a, b) => a.localeCompare(b));
 }
 
 /** 전체 여행지 조회 */

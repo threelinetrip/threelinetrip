@@ -30,7 +30,9 @@ import {
   updateDestinationById,
   uploadFilesWithProgress,
   deleteStorageFiles,
+  fetchAllTags,
 } from "@/lib/supabase";
+import TagChip from "@/components/TagChip";
 
 // ─────────────────────────────────────────────
 // 상수 및 헬퍼
@@ -68,6 +70,118 @@ type ExistingMediaItem = {
   credit: string;
 };
 type MediaItem = NewMediaItem | ExistingMediaItem;
+
+// ─────────────────────────────────────────────
+// 태그 입력 컴포넌트
+// ─────────────────────────────────────────────
+const MAX_TAGS = 10;
+
+function TagInput({
+  tags,
+  onChange,
+  allTags,
+}: {
+  tags: string[];
+  onChange: (tags: string[]) => void;
+  allTags: string[];
+}) {
+  const [input, setInput] = useState("");
+  const [showDrop, setShowDrop] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const suggestions = allTags.filter(
+    (t) => t.toLowerCase().includes(input.toLowerCase()) && !tags.includes(t)
+  );
+
+  const addTag = useCallback(
+    (raw: string) => {
+      const tag = raw.replace(/,/g, "").trim();
+      if (!tag || tags.includes(tag) || tags.length >= MAX_TAGS) return;
+      onChange([...tags, tag]);
+      setInput("");
+      setShowDrop(false);
+    },
+    [tags, onChange]
+  );
+
+  const removeTag = useCallback(
+    (tag: string) => onChange(tags.filter((t) => t !== tag)),
+    [tags, onChange]
+  );
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter" || e.key === ",") {
+      e.preventDefault();
+      addTag(input);
+    } else if (e.key === "Backspace" && !input && tags.length > 0) {
+      removeTag(tags[tags.length - 1]);
+    } else if (e.key === "Escape") {
+      setShowDrop(false);
+    }
+  };
+
+  // 외부 클릭 시 드롭다운 닫기
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setShowDrop(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  return (
+    <div ref={containerRef} className="relative">
+      {/* 태그 칩 + 입력창 */}
+      <div
+        className="min-h-[46px] flex flex-wrap gap-1.5 items-center px-3 py-2
+                   border border-slate-200 rounded-lg cursor-text
+                   focus-within:ring-2 focus-within:ring-slate-200 focus-within:border-slate-400"
+        onClick={() => inputRef.current?.focus()}
+      >
+        {tags.map((tag) => (
+          <TagChip key={tag} tag={tag} onRemove={() => removeTag(tag)} />
+        ))}
+        <input
+          ref={inputRef}
+          type="text"
+          value={input}
+          onChange={(e) => { setInput(e.target.value); setShowDrop(true); }}
+          onKeyDown={handleKeyDown}
+          onFocus={() => setShowDrop(true)}
+          placeholder={tags.length === 0 ? "태그 입력 후 Enter 또는 , 로 추가 (최대 10개)" : ""}
+          className="flex-1 min-w-[160px] text-sm outline-none bg-transparent placeholder:text-slate-400"
+        />
+      </div>
+
+      {/* 자동완성 드롭다운 */}
+      {showDrop && suggestions.length > 0 && (
+        <div className="absolute z-30 mt-1 w-full bg-white border border-slate-200
+                        rounded-lg shadow-lg py-1 max-h-48 overflow-y-auto">
+          {suggestions.map((tag) => (
+            <button
+              key={tag}
+              type="button"
+              onMouseDown={(e) => { e.preventDefault(); addTag(tag); }}
+              className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-slate-50 text-left"
+            >
+              <TagChip tag={tag} />
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* 태그 수 카운터 */}
+      {tags.length > 0 && (
+        <p className="mt-1 text-right text-xs text-slate-400">
+          {tags.length} / {MAX_TAGS}
+        </p>
+      )}
+    </div>
+  );
+}
 
 // ─────────────────────────────────────────────
 // 드래그 가능한 썸네일 컴포넌트
@@ -210,11 +324,18 @@ function AdminWriteForm() {
     summary: "",
   });
 
+  const [tags, setTags]                 = useState<string[]>([]);
+  const [allTags, setAllTags]           = useState<string[]>([]);
   const [mediaItems, setMediaItems]     = useState<MediaItem[]>([]);
   const [uploading, setUploading]       = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
 
   const sigunguList = getSigunguBySido(sido);
+
+  // 기존 태그 목록 로드 (자동완성용)
+  useEffect(() => {
+    fetchAllTags().then(setAllTags).catch(() => {});
+  }, []);
 
   // 언마운트 시 blob URL 해제
   useEffect(() => {
@@ -239,6 +360,7 @@ function AdminWriteForm() {
       });
       setSido(existing.sido);
       setSigungu(existing.sigungu);
+      setTags(existing.tags ?? []);
 
       const loaded  = existing.imageUrls ?? [];
       const credits = existing.imageCredits ?? [];
@@ -345,6 +467,7 @@ function AdminWriteForm() {
     setFormData({ title: "", address: "", rating: "", summary: "" });
     setSido("");
     setSigungu("");
+    setTags([]);
     setMediaItems([]);
     setUploadProgress(0);
     originalUrlsRef.current = [];
@@ -402,6 +525,7 @@ function AdminWriteForm() {
         rating:      formData.rating ? Number(formData.rating) : 5,
         imageUrls:    finalUrls,
         imageCredits: finalCredits,
+        tags,
       };
 
       if (isEditMode && editId) {
@@ -611,6 +735,17 @@ function AdminWriteForm() {
             rows={8}
             className="w-full px-4 py-3 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-slate-400 placeholder:text-slate-400 resize-y min-h-[180px]"
           />
+        </div>
+
+        {/* 태그 */}
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-2">
+            태그
+            <span className="ml-1.5 text-xs text-slate-400 font-normal">
+              선택 사항 · 최대 10개 · Enter 또는 ,로 추가
+            </span>
+          </label>
+          <TagInput tags={tags} onChange={setTags} allTags={allTags} />
         </div>
 
         {/* 제출 버튼 */}

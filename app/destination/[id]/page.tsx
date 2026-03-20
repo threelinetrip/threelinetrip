@@ -8,7 +8,9 @@ import {
   MapPin, Star, Sparkles, ArrowLeft,
   Share2, Check, X, ZoomIn, ChevronLeft, ChevronRight,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { Swiper, SwiperSlide } from "swiper/react";
+import TagChip from "@/components/TagChip";
 import { Navigation, Pagination } from "swiper/modules";
 import type { Swiper as SwiperInstance } from "swiper";
 import "swiper/css";
@@ -254,6 +256,7 @@ function Lightbox({ media, initialIdx, title, onClose }: LightboxProps) {
 // ─────────────────────────────────────────────
 export default function DestinationDetailPage() {
   const params = useParams();
+  const router = useRouter();
   const id = params.id as string;
 
   const mainSwiperRef  = useRef<SwiperInstance | null>(null);
@@ -480,6 +483,19 @@ export default function DestinationDetailPage() {
             {destination.address && ` · ${destination.address}`}
           </span>
         </div>
+
+        {/* 태그 */}
+        {(destination.tags ?? []).length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mb-6">
+            {destination.tags!.map((tag) => (
+              <TagChip
+                key={tag}
+                tag={tag}
+                onClick={() => router.push(`/?tag=${encodeURIComponent(tag)}`)}
+              />
+            ))}
+          </div>
+        )}
 
         {/* 세 줄 여행 */}
         <div className="bg-amber-50 rounded-2xl p-6 border border-amber-100 mb-8">

@@ -3,10 +3,11 @@
 import { useState, useEffect, useMemo } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { Search, MapPin, Star, ArrowDownAZ } from "lucide-react";
+import { Search, MapPin, Star, ArrowDownAZ, Tag, X } from "lucide-react";
 import { REGIONS, getSigunguBySido } from "@/constants/regions";
 import { fetchAllDestinations, insertViewLog } from "@/lib/supabase";
 import RatingFilter from "@/components/RatingFilter";
+import TagChip from "@/components/TagChip";
 import type { Destination } from "@/lib/db/schema";
 
 function StarRating({ rating }: { rating: number }) {
@@ -73,6 +74,7 @@ export default function Home() {
   const [ratingFilter, setRatingFilter] = useState<number[]>([]);
   const [sido, setSido] = useState("");
   const [sigungu, setSigungu] = useState("");
+  const [tagFilter, setTagFilter] = useState("");
 
   const sigunguList = getSigunguBySido(sido);
 
@@ -81,6 +83,9 @@ export default function Home() {
       .then(setDestinations)
       .catch(() => setDestinations([]));
     insertViewLog(null);
+    // URL ?tag= 파라미터로 초기 태그 필터 설정
+    const urlTag = new URLSearchParams(window.location.search).get("tag") ?? "";
+    if (urlTag) setTagFilter(urlTag);
   }, []);
 
   const filteredAndSorted = useMemo(() => {
@@ -106,17 +111,27 @@ export default function Home() {
       result = result.filter((d) => ratingFilter.includes(d.rating));
     }
 
+    // 태그 필터
+    if (tagFilter) {
+      result = result.filter((d) => (d.tags ?? []).includes(tagFilter));
+    }
+
     // 가나다순 정렬
     if (sortByName) {
       result.sort((a, b) => (a.title ?? "").localeCompare(b.title ?? ""));
     }
 
     return result;
-  }, [destinations, search, sortByName, ratingFilter, sido, sigungu]);
+  }, [destinations, search, sortByName, ratingFilter, sido, sigungu, tagFilter]);
 
   const handleSidoChange = (value: string) => {
     setSido(value);
     setSigungu("");
+  };
+
+  const clearTagFilter = () => {
+    setTagFilter("");
+    window.history.replaceState({}, "", "/");
   };
 
   return (
@@ -207,6 +222,17 @@ export default function Home() {
           </div>
         </div>
       </div>
+
+      {/* 활성 태그 필터 배너 */}
+      {tagFilter && (
+        <div className="bg-slate-50 border-b border-slate-100">
+          <div className="max-w-7xl mx-auto px-3 sm:px-6 py-2 flex items-center gap-2 text-sm text-slate-500">
+            <Tag className="w-3.5 h-3.5 shrink-0" />
+            <span>태그 필터:</span>
+            <TagChip tag={tagFilter} onRemove={clearTagFilter} />
+          </div>
+        </div>
+      )}
 
       {/* 카드 그리드 */}
       <section className="max-w-6xl mx-auto px-3 sm:px-6 py-6">

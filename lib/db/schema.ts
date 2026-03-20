@@ -38,6 +38,12 @@ export interface Destination {
    */
   imageCredits?: string[];
 
+  /**
+   * 태그 배열 (DB: tags text[])
+   * 예: ["해변", "일출", "드라이브"]
+   */
+  tags?: string[];
+
   /** 조회수 */
   viewCount: number;
 
