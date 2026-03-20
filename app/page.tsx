@@ -387,23 +387,31 @@ export default function Home() {
           </div>
 
           {/* ────────────────────────────────────────
-              PC 전용 레이아웃 (sm 이상)
-              한 줄: 검색 | 시/도 | 시/군/구 | 점수 | 태그 | ↕ | ⟳
+              PC 전용 레이아웃 (sm 이상) — 단일 행
+              [좌] 검색 · ↕ · ⟳   [우] 시/도 · 시/군/구 · 점수 · 태그
           ──────────────────────────────────────── */}
-          <div className="hidden sm:flex sm:items-center sm:gap-2">
-            <SearchBox extraCls="max-w-[200px]" />
-            <SidoSelect />
-            <SigunguSelect />
-            <RatingSelect />
-            <TagFilterDropdown
-              value={tagFilter}
-              onChange={setTagFilter}
-              tags={allTags}
-            />
-            {/* 오른쪽 끝 */}
-            <div className="ml-auto flex items-center gap-1.5">
+          <div className="hidden sm:flex sm:items-center sm:gap-3">
+
+            {/* ── 좌측 그룹: 검색 + 도구 버튼 ── */}
+            <div className="flex items-center gap-1.5 shrink-0">
+              <SearchBox extraCls="w-[260px] max-w-[300px]" />
               <SortBtn />
               <ResetBtn />
+            </div>
+
+            {/* 구분선 */}
+            <div className="h-5 w-px bg-slate-200 shrink-0" />
+
+            {/* ── 우측 그룹: 상세 필터 ── */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <SidoSelect />
+              <SigunguSelect />
+              <RatingSelect />
+              <TagFilterDropdown
+                value={tagFilter}
+                onChange={setTagFilter}
+                tags={allTags}
+              />
             </div>
           </div>
 
