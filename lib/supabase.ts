@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import type { Destination, Tag } from "@/lib/db/schema";
+import { isAdminEmail } from "@/lib/auth";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -364,34 +365,103 @@ export async function deleteDestinationById(id: string): Promise<void> {
 
 /**
  * 페이지 조회·공유 로그 기록 (fire-and-forget)
- * - eventType: 'view'(기본) | 'share'
- * - 상세 페이지: destinationId에 UUID 전달
- * - 메인 페이지:  destinationId에 null 전달
+ * - 관리자 계정은 집계에서 제외
+ * - 동일 세션·동일 페이지 view 는 1회만 기록
  */
 export async function insertViewLog(
   destinationId: string | null,
   eventType: "view" | "share" = "view"
 ): Promise<void> {
-  const userAgent =
-    typeof navigator !== "undefined" ? navigator.userAgent : "";
-  const referrer =
-    typeof document !== "undefined" ? document.referrer : "";
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (isAdminEmail(session?.user?.email)) return;
 
-  const { error } = await supabase.from("view_logs").insert({
-    destination_id: destinationId,
-    user_agent: userAgent,
-    referrer: referrer,
-    event_type: eventType,
-  });
+    if (typeof sessionStorage !== "undefined" && eventType === "view") {
+      const dedupeKey = `viewed:${destinationId ?? "main"}`;
+      if (sessionStorage.getItem(dedupeKey)) return;
+      sessionStorage.setItem(dedupeKey, "1");
+    }
 
-  if (error) {
-    console.warn("[view_log 기록 실패]", toErrorMessage(error));
+    const userAgent =
+      typeof navigator !== "undefined" ? navigator.userAgent : "";
+    const referrer =
+      typeof document !== "undefined" ? document.referrer : "";
+
+    const { error } = await supabase.from("view_logs").insert({
+      destination_id: destinationId,
+      user_agent: userAgent,
+      referrer: referrer,
+      event_type: eventType,
+    });
+
+    if (error) {
+      console.warn("[view_log 기록 실패]", toErrorMessage(error));
+    }
+  } catch (err) {
+    console.warn("[view_log 기록 예외]", err);
   }
 }
 
 // ──────────────────────────────────────────────
 // 관리자 대시보드 통계
 // ──────────────────────────────────────────────
+
+export type StatsPeriod = "all" | "day" | "week" | "month";
+
+/** 기간별 집계 시작 시각 (전체: null) */
+export function getPeriodStart(period: StatsPeriod): string | null {
+  if (period === "all") return null;
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  if (period === "week") {
+    const day = start.getDay();
+    const diff = day === 0 ? 6 : day - 1;
+    start.setDate(start.getDate() - diff);
+  } else if (period === "month") {
+    start.setDate(1);
+  }
+  return start.toISOString();
+}
+
+export const STATS_PERIOD_LABELS: Record<StatsPeriod, string> = {
+  all: "전체",
+  day: "일간",
+  week: "주간",
+  month: "월간",
+};
+
+function applySinceFilter<T extends { gte: (col: string, val: string) => T }>(
+  query: T,
+  since: string | null
+): T {
+  return since ? query.gte("created_at", since) : query;
+}
+
+/** RPC 실패 시 view_logs 직접 집계 */
+async function fetchDestStatsDirect(
+  since: string | null
+): Promise<Record<string, { views: number; shares: number }>> {
+  let query = supabase
+    .from("view_logs")
+    .select("destination_id, event_type")
+    .not("destination_id", "is", null);
+  query = applySinceFilter(query, since);
+
+  const { data, error } = await query;
+  if (error) {
+    console.warn("[destStats 직접 집계 실패]", toErrorMessage(error));
+    return {};
+  }
+
+  const destStats: Record<string, { views: number; shares: number }> = {};
+  for (const row of data ?? []) {
+    const id = String(row.destination_id);
+    if (!destStats[id]) destStats[id] = { views: 0, shares: 0 };
+    if (row.event_type === "share") destStats[id].shares++;
+    else destStats[id].views++;
+  }
+  return destStats;
+}
 
 export interface DashboardStats {
   /** event_type='view' 전체 건수 */
@@ -406,32 +476,50 @@ export interface DashboardStats {
   destStats: Record<string, { views: number; shares: number }>;
 }
 
-export async function fetchDashboardStats(): Promise<DashboardStats> {
+export async function fetchDashboardStats(
+  period: StatsPeriod = "all"
+): Promise<DashboardStats> {
+  const since = getPeriodStart(period);
+
+  const totalViewsQ = applySinceFilter(
+    supabase.from("view_logs").select("*", { count: "exact", head: true }).eq("event_type", "view"),
+    since
+  );
+  const totalSharesQ = applySinceFilter(
+    supabase.from("view_logs").select("*", { count: "exact", head: true }).eq("event_type", "share"),
+    since
+  );
+  const mainQ = applySinceFilter(
+    supabase
+      .from("view_logs")
+      .select("*", { count: "exact", head: true })
+      .eq("event_type", "view")
+      .is("destination_id", null),
+    since
+  );
+  const detailQ = applySinceFilter(
+    supabase
+      .from("view_logs")
+      .select("*", { count: "exact", head: true })
+      .eq("event_type", "view")
+      .not("destination_id", "is", null),
+    since
+  );
+
   const [totalViewsRes, totalSharesRes, mainRes, detailRes, destRes] =
     await Promise.all([
-      supabase
-        .from("view_logs")
-        .select("*", { count: "exact", head: true })
-        .eq("event_type", "view"),
-      supabase
-        .from("view_logs")
-        .select("*", { count: "exact", head: true })
-        .eq("event_type", "share"),
-      supabase
-        .from("view_logs")
-        .select("*", { count: "exact", head: true })
-        .eq("event_type", "view")
-        .is("destination_id", null),
-      supabase
-        .from("view_logs")
-        .select("*", { count: "exact", head: true })
-        .eq("event_type", "view")
-        .not("destination_id", "is", null),
-      supabase.rpc("get_destination_stats"),
+      totalViewsQ,
+      totalSharesQ,
+      mainQ,
+      detailQ,
+      supabase.rpc("get_destination_stats", { since_timestamptz: since }),
     ]);
 
-  const destStats: Record<string, { views: number; shares: number }> = {};
-  if (destRes.data) {
+  let destStats: Record<string, { views: number; shares: number }> = {};
+  if (destRes.error) {
+    console.warn("[get_destination_stats RPC 실패, 직접 집계]", toErrorMessage(destRes.error));
+    destStats = await fetchDestStatsDirect(since);
+  } else if (destRes.data) {
     for (const row of destRes.data as Array<{
       destination_id: string;
       view_count: number;

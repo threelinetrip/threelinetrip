@@ -6,8 +6,18 @@ import Link from "next/link";
 import {
   Search, MapPin, Star, ArrowDownAZ, RotateCcw, ChevronDown, Check,
 } from "lucide-react";
-import { REGIONS, getSigunguBySido } from "@/constants/regions";
+import { REGIONS, getSigunguBySido, matchesSidoFilter } from "@/constants/regions";
+import { TAGS_VISIBLE } from "@/constants/feature-flags";
 import { fetchAllDestinations, insertViewLog } from "@/lib/supabase";
+import {
+  parseFiltersFromUrl,
+  syncFiltersToUrl,
+  saveMainScroll,
+  saveMainReturnUrl,
+  consumeMainScroll,
+  restoreMainScroll,
+  type MainPageFilters,
+} from "@/lib/main-page-state";
 import { getRatingLabel } from "@/constants/rating";
 import TagChip, { getColors } from "@/components/TagChip";
 import type { Destination, Tag } from "@/lib/db/schema";
@@ -36,10 +46,24 @@ function StarRating({ rating }: { rating: number }) {
 // ─────────────────────────────────────────────
 // 여행지 카드
 // ─────────────────────────────────────────────
-function DestinationCard({ item }: { item: Destination }) {
+function DestinationCard({
+  item,
+  filters,
+}: {
+  item: Destination;
+  filters: MainPageFilters;
+}) {
   const thumb = item.imageUrls?.[0];
+  const handleNavigate = () => {
+    saveMainScroll();
+    saveMainReturnUrl(filters);
+  };
   return (
-    <Link href={`/destination/${item.id}`} className="block group">
+    <Link
+      href={`/destination/${item.id}`}
+      className="block group"
+      onClick={handleNavigate}
+    >
       <article className="flex flex-col h-full bg-white rounded-xl overflow-hidden border border-slate-100
                           hover:border-slate-200 hover:shadow-md hover:-translate-y-0.5
                           transition-all duration-200 ease-out">
@@ -191,6 +215,149 @@ const selectCls =
   "text-slate-700 cursor-pointer " +
   "disabled:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400";
 
+function SearchBox({
+  value,
+  onChange,
+  extraCls = "",
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  extraCls?: string;
+}) {
+  return (
+    <div className={`relative flex-1 min-w-0 ${extraCls}`}>
+      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+      <input
+        type="search"
+        placeholder={TAGS_VISIBLE ? "제목, 지역, 태그 검색" : "제목, 지역 검색"}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="h-9 w-full pl-9 pr-3 text-sm border border-slate-100 rounded-lg bg-white
+                   focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-slate-300
+                   placeholder:text-slate-400"
+      />
+    </div>
+  );
+}
+
+function SortBtn({
+  active,
+  onToggle,
+}: {
+  active: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      title={active ? "가나다순 해제" : "가나다순 정렬"}
+      className={`h-9 w-9 flex items-center justify-center rounded-lg border shrink-0 transition-colors ${
+        active
+          ? "bg-slate-800 border-slate-800 text-white"
+          : "bg-gray-50 border-slate-100 text-slate-500 hover:border-slate-300"
+      }`}
+    >
+      <ArrowDownAZ className="w-4 h-4" />
+    </button>
+  );
+}
+
+function ResetBtn({
+  hasFilter,
+  onReset,
+}: {
+  hasFilter: boolean;
+  onReset: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onReset}
+      title="필터 초기화"
+      className={`h-9 w-9 flex items-center justify-center rounded-lg border shrink-0 transition-colors ${
+        hasFilter
+          ? "bg-rose-50 border-rose-200 text-rose-500 hover:bg-rose-100"
+          : "bg-gray-50 border-slate-100 text-slate-300 cursor-default"
+      }`}
+    >
+      <RotateCcw className="w-3.5 h-3.5" />
+    </button>
+  );
+}
+
+function SidoSelect({
+  value,
+  onChange,
+  fullW = false,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  fullW?: boolean;
+}) {
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className={`${selectCls} ${fullW ? "w-full" : "shrink-0"}`}
+    >
+      <option value="">전체 시/도</option>
+      {REGIONS.map((r) => <option key={r.sido} value={r.sido}>{r.sido}</option>)}
+    </select>
+  );
+}
+
+function SigunguSelect({
+  value,
+  onChange,
+  disabled,
+  options,
+  fullW = false,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  disabled: boolean;
+  options: string[];
+  fullW?: boolean;
+}) {
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      disabled={disabled}
+      className={`${selectCls} ${fullW ? "w-full" : "shrink-0"}`}
+    >
+      <option value="">전체 시/군/구</option>
+      {options.map((s) => <option key={s} value={s}>{s}</option>)}
+    </select>
+  );
+}
+
+function RatingSelect({
+  value,
+  onChange,
+  fullW = false,
+}: {
+  value: number | "";
+  onChange: (value: number | "") => void;
+  fullW?: boolean;
+}) {
+  return (
+    <select
+      value={value}
+      onChange={(e) =>
+        onChange(e.target.value === "" ? "" : Number(e.target.value))
+      }
+      className={`${selectCls} ${fullW ? "w-full" : "shrink-0"}`}
+    >
+      <option value="">전체 점수</option>
+      {[5, 4, 3, 2, 1].map((n) => (
+        <option key={n} value={n}>{n}점 · {getRatingLabel(n)}</option>
+      ))}
+    </select>
+  );
+}
+
 // ─────────────────────────────────────────────
 // 메인 페이지
 // ─────────────────────────────────────────────
@@ -202,17 +369,61 @@ export default function Home() {
   const [sido,         setSido]         = useState("");
   const [sigungu,      setSigungu]      = useState("");
   const [tagFilter,    setTagFilter]    = useState("");
+  const [filtersReady, setFiltersReady] = useState(false);
+  const scrollRestored = useRef(false);
 
   const sigunguList = getSigunguBySido(sido);
 
-  // 데이터 로드 + URL ?tag= 초기화
+  // URL → 필터 state 초기화
+  useEffect(() => {
+    const parsed = parseFiltersFromUrl(window.location.search);
+    setSearch(parsed.search);
+    setSido(parsed.sido);
+    setSigungu(parsed.sigungu);
+    setRatingFilter(parsed.ratingFilter);
+    setTagFilter(parsed.tagFilter);
+    setSortByName(parsed.sortByName);
+    setFiltersReady(true);
+  }, []);
+
+  // 브라우저 기본 스크롤 복원 비활성화 (직접 제어)
+  useEffect(() => {
+    if ("scrollRestoration" in window.history) {
+      const prev = window.history.scrollRestoration;
+      window.history.scrollRestoration = "manual";
+      return () => { window.history.scrollRestoration = prev; };
+    }
+  }, []);
+
+  // 필터 state → URL 동기화
+  useEffect(() => {
+    if (!filtersReady) return;
+    syncFiltersToUrl({
+      search, sido, sigungu, ratingFilter, tagFilter, sortByName,
+    } satisfies MainPageFilters);
+  }, [filtersReady, search, sido, sigungu, ratingFilter, tagFilter, sortByName]);
+
+  // 브라우저 뒤로/앞으로 시 URL → 필터 동기화
+  useEffect(() => {
+    const onPopState = () => {
+      const parsed = parseFiltersFromUrl(window.location.search);
+      setSearch(parsed.search);
+      setSido(parsed.sido);
+      setSigungu(parsed.sigungu);
+      setRatingFilter(parsed.ratingFilter);
+      setTagFilter(parsed.tagFilter);
+      setSortByName(parsed.sortByName);
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+
+  // 데이터 로드 + 메인 조회 로그
   useEffect(() => {
     fetchAllDestinations()
       .then(setDestinations)
       .catch(() => setDestinations([]));
     insertViewLog(null);
-    const urlTag = new URLSearchParams(window.location.search).get("tag") ?? "";
-    if (urlTag) setTagFilter(urlTag);
   }, []);
 
   // 전체 고유 태그 — Tag[] (이름 기준 중복 제거, 첫 발견 색상 사용)
@@ -245,7 +456,7 @@ export default function Home() {
       );
     }
 
-    if (sido)    result = result.filter((d) => d.sido === sido);
+    if (sido)    result = result.filter((d) => matchesSidoFilter(d.sido, sido));
     if (sigungu) result = result.filter((d) => d.sigungu === sigungu);
 
     if (ratingFilter !== "") {
@@ -270,95 +481,37 @@ export default function Home() {
   const resetAll = () => {
     setSearch(""); setSortByName(false); setRatingFilter("");
     setSido(""); setSigungu(""); setTagFilter("");
-    window.history.replaceState({}, "", "/");
+    window.history.replaceState(null, "", "/");
   };
+
+  // 뒤로가기·bfcache 복귀 시 스크롤 위치 복원
+  useEffect(() => {
+    if (!filtersReady || scrollRestored.current || destinations.length === 0) return;
+    const y = consumeMainScroll();
+    if (y === null) return;
+    scrollRestored.current = true;
+    restoreMainScroll(y);
+  }, [filtersReady, destinations.length, filteredAndSorted.length]);
+
+  useEffect(() => {
+    const onPageShow = (e: PageTransitionEvent) => {
+      if (!e.persisted || scrollRestored.current) return;
+      const y = consumeMainScroll();
+      if (y === null) return;
+      scrollRestored.current = true;
+      restoreMainScroll(y);
+    };
+    window.addEventListener("pageshow", onPageShow);
+    return () => window.removeEventListener("pageshow", onPageShow);
+  }, []);
+
+  const currentFilters = useMemo<MainPageFilters>(
+    () => ({ search, sido, sigungu, ratingFilter, tagFilter, sortByName }),
+    [search, sido, sigungu, ratingFilter, tagFilter, sortByName]
+  );
 
   const hasFilter =
     !!search || sortByName || ratingFilter !== "" || !!sido || !!sigungu || !!tagFilter;
-
-  // ── 공용 서브 컴포넌트 (JSX 조각) ─────────────
-  const SearchBox = ({ extraCls = "" }: { extraCls?: string }) => (
-    <div className={`relative flex-1 min-w-0 ${extraCls}`}>
-      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-      <input
-        type="search"
-        placeholder="제목, 지역, 태그 검색"
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        className="h-9 w-full pl-9 pr-3 text-sm border border-slate-100 rounded-lg bg-white
-                   focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-slate-300
-                   placeholder:text-slate-400"
-      />
-    </div>
-  );
-
-  const SortBtn = () => (
-    <button
-      type="button"
-      onClick={() => setSortByName((v) => !v)}
-      title={sortByName ? "가나다순 해제" : "가나다순 정렬"}
-      className={`h-9 w-9 flex items-center justify-center rounded-lg border shrink-0 transition-colors ${
-        sortByName
-          ? "bg-slate-800 border-slate-800 text-white"
-          : "bg-gray-50 border-slate-100 text-slate-500 hover:border-slate-300"
-      }`}
-    >
-      <ArrowDownAZ className="w-4 h-4" />
-    </button>
-  );
-
-  const ResetBtn = () => (
-    <button
-      type="button"
-      onClick={resetAll}
-      title="필터 초기화"
-      className={`h-9 w-9 flex items-center justify-center rounded-lg border shrink-0 transition-colors ${
-        hasFilter
-          ? "bg-rose-50 border-rose-200 text-rose-500 hover:bg-rose-100"
-          : "bg-gray-50 border-slate-100 text-slate-300 cursor-default"
-      }`}
-    >
-      <RotateCcw className="w-3.5 h-3.5" />
-    </button>
-  );
-
-  const SidoSelect = ({ fullW = false }: { fullW?: boolean }) => (
-    <select
-      value={sido}
-      onChange={(e) => handleSidoChange(e.target.value)}
-      className={`${selectCls} ${fullW ? "w-full" : "shrink-0"}`}
-    >
-      <option value="">전체 시/도</option>
-      {REGIONS.map((r) => <option key={r.sido} value={r.sido}>{r.sido}</option>)}
-    </select>
-  );
-
-  const SigunguSelect = ({ fullW = false }: { fullW?: boolean }) => (
-    <select
-      value={sigungu}
-      onChange={(e) => setSigungu(e.target.value)}
-      disabled={!sido}
-      className={`${selectCls} ${fullW ? "w-full" : "shrink-0"}`}
-    >
-      <option value="">전체 시/군/구</option>
-      {sigunguList.map((s) => <option key={s} value={s}>{s}</option>)}
-    </select>
-  );
-
-  const RatingSelect = ({ fullW = false }: { fullW?: boolean }) => (
-    <select
-      value={ratingFilter}
-      onChange={(e) =>
-        setRatingFilter(e.target.value === "" ? "" : Number(e.target.value))
-      }
-      className={`${selectCls} ${fullW ? "w-full" : "shrink-0"}`}
-    >
-      <option value="">전체 점수</option>
-      {[5, 4, 3, 2, 1].map((n) => (
-        <option key={n} value={n}>{n}점 · {getRatingLabel(n)}</option>
-      ))}
-    </select>
-  );
 
   // ─────────────────────────────────────────────
   return (
@@ -378,24 +531,32 @@ export default function Home() {
           <div className="flex flex-col gap-1.5 sm:hidden">
             {/* 1행 */}
             <div className="flex items-center gap-1.5">
-              <SearchBox />
-              <SortBtn />
-              <ResetBtn />
+              <SearchBox value={search} onChange={setSearch} />
+              <SortBtn active={sortByName} onToggle={() => setSortByName((v) => !v)} />
+              <ResetBtn hasFilter={hasFilter} onReset={resetAll} />
             </div>
             {/* 2행 */}
             <div className="grid grid-cols-2 gap-1.5">
-              <SidoSelect fullW />
-              <SigunguSelect fullW />
+              <SidoSelect value={sido} onChange={handleSidoChange} fullW />
+              <SigunguSelect
+                value={sigungu}
+                onChange={setSigungu}
+                disabled={!sido}
+                options={sigunguList}
+                fullW
+              />
             </div>
             {/* 3행 */}
             <div className="grid grid-cols-2 gap-1.5">
-              <RatingSelect fullW />
-              <TagFilterDropdown
-                value={tagFilter}
-                onChange={setTagFilter}
-                tags={allTags}
-                fullWidth
-              />
+              <RatingSelect value={ratingFilter} onChange={setRatingFilter} fullW />
+              {TAGS_VISIBLE && (
+                <TagFilterDropdown
+                  value={tagFilter}
+                  onChange={setTagFilter}
+                  tags={allTags}
+                  fullWidth
+                />
+              )}
             </div>
           </div>
 
@@ -407,21 +568,32 @@ export default function Home() {
 
             {/* ── 좌측: 검색 + 도구 버튼 ── */}
             <div className="flex items-center gap-1.5 shrink-0">
-              <SearchBox extraCls="min-w-[280px] max-w-[350px]" />
-              <SortBtn />
-              <ResetBtn />
+              <SearchBox
+                value={search}
+                onChange={setSearch}
+                extraCls="min-w-[280px] max-w-[350px]"
+              />
+              <SortBtn active={sortByName} onToggle={() => setSortByName((v) => !v)} />
+              <ResetBtn hasFilter={hasFilter} onReset={resetAll} />
             </div>
 
             {/* ── 우측: 상세 필터 ── */}
             <div className="flex items-center gap-2">
-              <SidoSelect />
-              <SigunguSelect />
-              <RatingSelect />
-              <TagFilterDropdown
-                value={tagFilter}
-                onChange={setTagFilter}
-                tags={allTags}
+              <SidoSelect value={sido} onChange={handleSidoChange} />
+              <SigunguSelect
+                value={sigungu}
+                onChange={setSigungu}
+                disabled={!sido}
+                options={sigunguList}
               />
+              <RatingSelect value={ratingFilter} onChange={setRatingFilter} />
+              {TAGS_VISIBLE && (
+                <TagFilterDropdown
+                  value={tagFilter}
+                  onChange={setTagFilter}
+                  tags={allTags}
+                />
+              )}
             </div>
           </div>
 
@@ -437,7 +609,7 @@ export default function Home() {
         ) : (
           <div className="grid grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-4">
             {filteredAndSorted.map((item) => (
-              <DestinationCard key={item.id} item={item} />
+              <DestinationCard key={item.id} item={item} filters={currentFilters} />
             ))}
           </div>
         )}

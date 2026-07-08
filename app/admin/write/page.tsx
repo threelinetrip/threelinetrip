@@ -23,6 +23,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { REGIONS, getSigunguBySido } from "@/constants/regions";
+import { TAGS_VISIBLE } from "@/constants/feature-flags";
 import { getRatingLabel, getRatingBadgeClass } from "@/constants/rating";
 import {
   fetchDestinationById,
@@ -870,16 +871,18 @@ function AdminWriteForm() {
           />
         </div>
 
-        {/* 태그 */}
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-2">
-            태그
-            <span className="ml-1.5 text-xs text-slate-400 font-normal">
-              선택 사항 · 최대 10개 · Enter 또는 ,로 추가
-            </span>
-          </label>
-          <TagInput tags={tags} onChange={setTags} allTags={allTags} />
-        </div>
+        {/* 태그 — TAGS_VISIBLE=false 시 UI 숨김 (DB 데이터는 유지) */}
+        {TAGS_VISIBLE && (
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-2">
+              태그
+              <span className="ml-1.5 text-xs text-slate-400 font-normal">
+                선택 사항 · 최대 10개 · Enter 또는 ,로 추가
+              </span>
+            </label>
+            <TagInput tags={tags} onChange={setTags} allTags={allTags} />
+          </div>
+        )}
 
         {/* 제출 버튼 */}
         <div className="pt-4">

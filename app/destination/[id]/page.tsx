@@ -17,6 +17,8 @@ import "swiper/css";
 import "swiper/css/navigation";
 import "swiper/css/pagination";
 import { fetchDestinationById, insertViewLog } from "@/lib/supabase";
+import { TAGS_VISIBLE } from "@/constants/feature-flags";
+import { getMainReturnUrl } from "@/lib/main-page-state";
 import type { Destination } from "@/lib/db/schema";
 import {
   RATING_LABELS,
@@ -299,18 +301,25 @@ export default function DestinationDetailPage() {
   const handleShare = async () => {
     const url = typeof window !== "undefined" ? window.location.href : "";
     const shareTitle = destination?.title ?? "세줄여행";
+    let sharedOk = false;
     try {
       if (navigator.share) {
         await navigator.share({ title: shareTitle, url });
+        sharedOk = true;
       } else {
         await navigator.clipboard.writeText(url);
         setShared(true);
         setTimeout(() => setShared(false), 2000);
+        sharedOk = true;
       }
     } catch {
       // 공유 취소 시 무시
     }
-    insertViewLog(id, "share");
+    if (sharedOk) insertViewLog(id, "share");
+  };
+
+  const handleBack = () => {
+    router.push(getMainReturnUrl());
   };
 
   useEffect(() => {
@@ -485,7 +494,7 @@ export default function DestinationDetailPage() {
         </div>
 
         {/* 태그 */}
-        {(destination.tags ?? []).filter((t) => t?.name).length > 0 && (
+        {TAGS_VISIBLE && (destination.tags ?? []).filter((t) => t?.name).length > 0 && (
           <div className="flex flex-wrap gap-1.5 mb-6">
             {destination.tags!
               .filter((tag) => tag?.name?.trim())
@@ -515,13 +524,14 @@ export default function DestinationDetailPage() {
 
         {/* 하단 버튼 */}
         <div className="flex items-center justify-center gap-3">
-          <Link
-            href="/"
+          <button
+            type="button"
+            onClick={handleBack}
             className="inline-flex items-center gap-2 px-6 py-3 bg-slate-900 text-white font-medium rounded-lg hover:bg-slate-800 transition-colors"
           >
             <ArrowLeft className="w-4 h-4" />
             목록으로 돌아가기
-          </Link>
+          </button>
           <button
             type="button"
             onClick={handleShare}

@@ -1,14 +1,16 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { Pencil, Trash2, MapPin, ArrowUp, ArrowDown, Eye, Share2, Users, Home, TrendingUp, ArrowDownAZ } from "lucide-react";
-import { REGIONS } from "@/constants/regions";
+import { REGIONS, matchesSidoFilter } from "@/constants/regions";
 import {
   fetchAllDestinations,
   deleteDestinationById,
   fetchDashboardStats,
+  STATS_PERIOD_LABELS,
   type DashboardStats,
+  type StatsPeriod,
 } from "@/lib/supabase";
 import RatingFilter from "@/components/RatingFilter";
 import type { Destination } from "@/lib/db/schema";
@@ -36,6 +38,7 @@ export default function AdminDashboardPage() {
   const [sortByName, setSortByName] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>("createdAt");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
+  const [statsPeriod, setStatsPeriod] = useState<StatsPeriod>("all");
 
   const loadItems = useCallback(async () => {
     try {
@@ -48,10 +51,13 @@ export default function AdminDashboardPage() {
 
   useEffect(() => {
     loadItems();
-    fetchDashboardStats()
+  }, [loadItems]);
+
+  useEffect(() => {
+    fetchDashboardStats(statsPeriod)
       .then(setStats)
       .catch(() => setStats(null));
-  }, [loadItems]);
+  }, [statsPeriod]);
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -63,7 +69,7 @@ export default function AdminDashboardPage() {
   };
 
   const filteredAndSorted = items
-    .filter((d) => !sidoFilter || d.sido === sidoFilter)
+    .filter((d) => matchesSidoFilter(d.sido, sidoFilter))
     .filter((d) => ratingFilter.length === 0 || ratingFilter.includes(d.rating))
     .sort((a, b) => {
       // 가나다순 토글이 켜져 있으면 우선 적용
@@ -81,6 +87,16 @@ export default function AdminDashboardPage() {
       }
       return sortDir === "asc" ? cmp : -cmp;
     });
+
+  // 등록일 오름차순 기준 고유 번호 (필터와 무관하게 유지)
+  const postNumberMap = useMemo(() => {
+    const sorted = [...items].sort((a, b) =>
+      (a.createdAt ?? "").localeCompare(b.createdAt ?? "")
+    );
+    const map = new Map<string, number>();
+    sorted.forEach((item, i) => map.set(item.id, i + 1));
+    return map;
+  }, [items]);
 
   const handleDelete = async (id: string, title: string) => {
     if (!confirm(`정말 삭제하시겠습니까?\n\n"${title}"`)) return;
@@ -125,9 +141,31 @@ export default function AdminDashboardPage() {
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8">
-      <h1 className="text-xl font-semibold text-slate-800 mb-6">
+      <h1 className="text-xl font-semibold text-slate-800 mb-2">
         게시글 관리
       </h1>
+      <p className="text-sm text-slate-500 mb-6">
+        전체 {items.length.toLocaleString()}건
+        {statsPeriod !== "all" && ` · ${STATS_PERIOD_LABELS[statsPeriod]} 통계`}
+      </p>
+
+      {/* 통계 기간 선택 */}
+      <div className="flex flex-wrap gap-2 mb-4">
+        {(Object.keys(STATS_PERIOD_LABELS) as StatsPeriod[]).map((key) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setStatsPeriod(key)}
+            className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
+              statsPeriod === key
+                ? "bg-slate-800 border-slate-800 text-white"
+                : "bg-white border-slate-200 text-slate-600 hover:border-slate-300"
+            }`}
+          >
+            {STATS_PERIOD_LABELS[key]}
+          </button>
+        ))}
+      </div>
 
       {/* 통계 카드 */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
@@ -217,6 +255,9 @@ export default function AdminDashboardPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200">
+                  <th className="text-center py-3 px-3 font-medium text-slate-700 w-12">
+                    No.
+                  </th>
                   <th
                     onClick={() => handleSort("title")}
                     className="text-left py-3 px-4 font-medium text-slate-700 cursor-pointer hover:bg-slate-100 transition-colors select-none"
@@ -264,6 +305,11 @@ export default function AdminDashboardPage() {
                   </th>
                   <th className="text-left py-3 px-4 font-medium text-slate-700 w-28">
                     조회 / 공유
+                    {statsPeriod !== "all" && (
+                      <span className="block text-[10px] font-normal text-slate-400 mt-0.5">
+                        {STATS_PERIOD_LABELS[statsPeriod]}
+                      </span>
+                    )}
                   </th>
                   <th className="text-right py-3 px-4 font-medium text-slate-700 w-40">
                     작업
@@ -276,6 +322,9 @@ export default function AdminDashboardPage() {
                     key={row.id}
                     className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors"
                   >
+                    <td className="py-3 px-3 text-center text-slate-500 tabular-nums">
+                      {postNumberMap.get(row.id) ?? "-"}
+                    </td>
                     <td className="py-3 px-4">
                       <Link
                         href={`/destination/${row.id}`}

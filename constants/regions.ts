@@ -88,8 +88,36 @@ export const REGIONS: Region[] = [
     ],
   },
   {
-    sido: "광주광역시",
-    sigunguList: ["동구", "서구", "남구", "북구", "광산구"],
+    sido: "광주전남특별통합시",
+    sigunguList: [
+      "목포시",
+      "여수시",
+      "순천시",
+      "나주시",
+      "광양시",
+      "동구",
+      "서구",
+      "남구",
+      "북구",
+      "광산구",
+      "담양군",
+      "곡성군",
+      "구례군",
+      "고흥군",
+      "보성군",
+      "화순군",
+      "장흥군",
+      "강진군",
+      "해남군",
+      "영암군",
+      "무안군",
+      "함평군",
+      "영광군",
+      "장성군",
+      "완도군",
+      "진도군",
+      "신안군",
+    ],
   },
   {
     sido: "대전광역시",
@@ -217,33 +245,6 @@ export const REGIONS: Region[] = [
     ],
   },
   {
-    sido: "전라남도",
-    sigunguList: [
-      "목포시",
-      "여수시",
-      "순천시",
-      "나주시",
-      "광양시",
-      "담양군",
-      "곡성군",
-      "구례군",
-      "고흥군",
-      "보성군",
-      "화순군",
-      "장흥군",
-      "강진군",
-      "해남군",
-      "영암군",
-      "무안군",
-      "함평군",
-      "영광군",
-      "장성군",
-      "완도군",
-      "진도군",
-      "신안군",
-    ],
-  },
-  {
     sido: "경상북도",
     sigunguList: [
       "포항시",
@@ -303,8 +304,26 @@ export const REGIONS: Region[] = [
 /** 시도 목록만 추출 */
 export const SIDO_LIST = REGIONS.map((r) => r.sido);
 
-/** 시도 코드로 시군구 목록 조회 */
+/** 통합 이전 시·도명 — 기존 게시글 필터 호환용 */
+export const LEGACY_SIDO_ALIASES: Record<string, string[]> = {
+  "광주전남특별통합시": [
+    "광주전남특별통합시",
+    "전남광주통합특별시",
+    "전남광주특별시",
+    "광주광역시",
+    "전라남도",
+  ],
+};
+
+/** 시·도 필터 매칭 (통합 전 지역명 포함) */
+export function matchesSidoFilter(destinationSido: string, filterSido: string): boolean {
+  if (!filterSido) return true;
+  const aliases = LEGACY_SIDO_ALIASES[filterSido] ?? [filterSido];
+  return aliases.includes(destinationSido);
+}
+
+/** 시도 코드로 시군구 목록 조회 (가나다순) */
 export function getSigunguBySido(sido: string): string[] {
   const region = REGIONS.find((r) => r.sido === sido);
-  return region?.sigunguList ?? [];
+  return [...(region?.sigunguList ?? [])].sort((a, b) => a.localeCompare(b, "ko"));
 }
