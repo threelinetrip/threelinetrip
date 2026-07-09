@@ -48,6 +48,7 @@ function daysAgo(n: number): string {
 }
 
 const RANGE_PRESETS = [
+  { label: "전체", allTime: true as const },
   { label: "최근 7일", days: 6 },
   { label: "최근 14일", days: 13 },
   { label: "최근 30일", days: 29 },
@@ -67,6 +68,7 @@ export default function AdminDashboardPage() {
 
   const [fromDate, setFromDate] = useState(() => daysAgo(13));
   const [toDate, setToDate] = useState(() => toDateInput(new Date()));
+  const [allTime, setAllTime] = useState(false);
 
   const loadItems = useCallback(async () => {
     try {
@@ -82,13 +84,14 @@ export default function AdminDashboardPage() {
   }, [loadItems]);
 
   useEffect(() => {
-    if (!fromDate || !toDate || fromDate > toDate) return;
+    if (!toDate) return;
+    if (!allTime && (!fromDate || fromDate > toDate)) return;
     setLoadingStats(true);
-    fetchRangeAnalytics(fromDate, toDate)
+    fetchRangeAnalytics(allTime ? null : fromDate, toDate)
       .then(setAnalytics)
       .catch(() => setAnalytics(null))
       .finally(() => setLoadingStats(false));
-  }, [fromDate, toDate]);
+  }, [fromDate, toDate, allTime]);
 
   // 등록일 오름차순 기준 고유 번호 (필터와 무관하게 유지)
   const postNumberMap = useMemo(() => {
@@ -150,7 +153,14 @@ export default function AdminDashboardPage() {
   };
 
   const applyPreset = (days: number) => {
+    setAllTime(false);
     setFromDate(daysAgo(days));
+    setToDate(toDateInput(new Date()));
+  };
+
+  const applyAllTime = () => {
+    setAllTime(true);
+    setFromDate(toDateInput(new Date()));
     setToDate(toDateInput(new Date()));
   };
 
@@ -210,8 +220,11 @@ export default function AdminDashboardPage() {
               type="date"
               value={fromDate}
               max={toDate}
-              onChange={(e) => setFromDate(e.target.value)}
-              className="px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-slate-200"
+              disabled={allTime}
+              onChange={(e) => { setAllTime(false); setFromDate(e.target.value); }}
+              className={`px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-200 ${
+                allTime ? "bg-slate-50 text-slate-400 cursor-not-allowed" : "bg-white"
+              }`}
             />
           </div>
           <div>
@@ -219,23 +232,30 @@ export default function AdminDashboardPage() {
             <input
               type="date"
               value={toDate}
-              min={fromDate}
+              min={allTime ? undefined : fromDate}
               max={toDateInput(new Date())}
-              onChange={(e) => setToDate(e.target.value)}
+              onChange={(e) => { setAllTime(false); setToDate(e.target.value); }}
               className="px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-slate-200"
             />
           </div>
           <div className="flex flex-wrap gap-1.5">
-            {RANGE_PRESETS.map((p) => (
-              <button
-                key={p.label}
-                type="button"
-                onClick={() => applyPreset(p.days)}
-                className="px-3 py-2 text-sm rounded-lg border bg-white border-slate-200 text-slate-600 hover:border-slate-300 transition-colors"
-              >
-                {p.label}
-              </button>
-            ))}
+            {RANGE_PRESETS.map((p) => {
+              const isActive = "allTime" in p ? allTime : !allTime && fromDate === daysAgo(p.days);
+              return (
+                <button
+                  key={p.label}
+                  type="button"
+                  onClick={() => ("allTime" in p ? applyAllTime() : applyPreset(p.days))}
+                  className={`px-3 py-2 text-sm rounded-lg border transition-colors ${
+                    isActive
+                      ? "bg-slate-800 border-slate-800 text-white"
+                      : "bg-white border-slate-200 text-slate-600 hover:border-slate-300"
+                  }`}
+                >
+                  {p.label}
+                </button>
+              );
+            })}
           </div>
           {loadingStats && (
             <span className="text-xs text-slate-400 pb-2">불러오는 중…</span>
@@ -266,7 +286,10 @@ export default function AdminDashboardPage() {
       {/* ── 추이 그래프 ── */}
       <div className="rounded-xl border border-slate-200 bg-white p-4 mb-8">
         <h2 className="text-sm font-semibold text-slate-700 mb-3">
-          기간별 추이 <span className="font-normal text-slate-400">({fromDate} ~ {toDate})</span>
+          기간별 추이{" "}
+          <span className="font-normal text-slate-400">
+            ({allTime ? "전체 기간" : `${fromDate} ~ ${toDate}`})
+          </span>
         </h2>
         <TrendChart data={analytics?.daily ?? []} />
       </div>

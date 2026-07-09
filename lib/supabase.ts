@@ -578,24 +578,27 @@ function toLocalDateKey(d: Date): string {
 
 /**
  * 지정 날짜 범위(로컬, 양끝 포함)의 조회·공유 로그를 집계
- * - fromDate / toDate: "YYYY-MM-DD"
+ * - fromDate: "YYYY-MM-DD" 또는 null(전체 기간)
+ * - toDate: "YYYY-MM-DD"
  */
 export async function fetchRangeAnalytics(
-  fromDate: string,
+  fromDate: string | null,
   toDate: string
 ): Promise<RangeAnalytics> {
-  const start = new Date(`${fromDate}T00:00:00`);
+  const start = fromDate ? new Date(`${fromDate}T00:00:00`) : null;
   const end = new Date(`${toDate}T23:59:59.999`);
 
-  // 범위 내 모든 날짜 버킷 초기화 (0으로 채움)
+  // 범위 내 모든 날짜 버킷 초기화 (전체 기간은 데이터가 있는 날만 동적 생성)
   const buckets = new Map<string, DailyStat>();
-  for (
-    let d = new Date(start.getFullYear(), start.getMonth(), start.getDate());
-    d <= end;
-    d.setDate(d.getDate() + 1)
-  ) {
-    const key = toLocalDateKey(d);
-    buckets.set(key, { date: key, mainViews: 0, detailViews: 0, shares: 0 });
+  if (start) {
+    for (
+      let d = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+      d <= end;
+      d.setDate(d.getDate() + 1)
+    ) {
+      const key = toLocalDateKey(d);
+      buckets.set(key, { date: key, mainViews: 0, detailViews: 0, shares: 0 });
+    }
   }
 
   const destStats: Record<string, { views: number; shares: number }> = {};
@@ -604,16 +607,25 @@ export async function fetchRangeAnalytics(
   let mainViews = 0;
   let totalShares = 0;
 
+  const ensureBucket = (key: string) => {
+    if (!buckets.has(key)) {
+      buckets.set(key, { date: key, mainViews: 0, detailViews: 0, shares: 0 });
+    }
+    return buckets.get(key)!;
+  };
+
   // 페이지네이션으로 전체 로그 수집 (기본 1000행 제한 대응)
   const PAGE = 1000;
   for (let offset = 0; ; offset += PAGE) {
-    const { data, error } = await supabase
+    let query = supabase
       .from("view_logs")
       .select("created_at, event_type, destination_id")
-      .gte("created_at", start.toISOString())
       .lte("created_at", end.toISOString())
       .order("created_at", { ascending: true })
       .range(offset, offset + PAGE - 1);
+    if (start) query = query.gte("created_at", start.toISOString());
+
+    const { data, error } = await query;
 
     if (error) {
       console.warn("[fetchRangeAnalytics 실패]", toErrorMessage(error));
@@ -624,7 +636,7 @@ export async function fetchRangeAnalytics(
       const created = row.created_at ? new Date(String(row.created_at)) : null;
       if (!created) continue;
       const key = toLocalDateKey(created);
-      const bucket = buckets.get(key);
+      const bucket = start ? buckets.get(key) : ensureBucket(key);
       const destId = row.destination_id ? String(row.destination_id) : null;
       const isShare = row.event_type === "share";
 
@@ -657,6 +669,6 @@ export async function fetchRangeAnalytics(
     mainViews,
     totalShares,
     destStats,
-    daily: Array.from(buckets.values()),
+    daily: Array.from(buckets.values()).sort((a, b) => a.date.localeCompare(b.date)),
   };
 }
