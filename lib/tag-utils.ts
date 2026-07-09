@@ -5,6 +5,40 @@ export function safeLower(s: unknown): string {
   return String(s ?? "").toLowerCase();
 }
 
+// 한글 자모 분해 (부분 음절 검색 지원: "도"가 "동"에도 매칭되도록)
+const HANGUL_CHO = "ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ";
+const HANGUL_JUNG = "ㅏㅐㅑㅒㅓㅔㅕㅖㅗㅘㅙㅚㅛㅜㅝㅞㅟㅠㅡㅢㅣ";
+const HANGUL_JONG = "\u0000ㄱㄲㄳㄴㄵㄶㄷㄹㄺㄻㄼㄽㄾㄿㅀㅁㅂㅄㅅㅆㅇㅈㅊㅋㅌㅍㅎ";
+
+/** 문자열을 한글 자모 시퀀스로 분해 (완성형 음절 → 초·중·종성) */
+function decomposeHangul(str: string): string {
+  let out = "";
+  for (const ch of str) {
+    const code = ch.charCodeAt(0);
+    if (code >= 0xac00 && code <= 0xd7a3) {
+      const s = code - 0xac00;
+      const cho = Math.floor(s / 588);
+      const jung = Math.floor((s % 588) / 28);
+      const jong = s % 28;
+      out += HANGUL_CHO[cho] + HANGUL_JUNG[jung] + (jong ? HANGUL_JONG[jong] : "");
+    } else {
+      out += ch.toLowerCase();
+    }
+  }
+  return out;
+}
+
+/**
+ * 한글 부분 음절까지 매칭하는 포함 검색
+ * - "도" 입력 시 "동해", "도시" 모두 매칭
+ * - 초성만 입력해도(ㄷ) 매칭
+ */
+export function hangulIncludes(text: unknown, query: unknown): boolean {
+  const q = String(query ?? "").trim();
+  if (!q) return true;
+  return decomposeHangul(String(text ?? "")).includes(decomposeHangul(q));
+}
+
 /**
  * DB·상태에서 올 수 있는 태그 표현을 문자열 라벨로 통일
  * - 구버전: string

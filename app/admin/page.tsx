@@ -2,20 +2,23 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
-import { Pencil, Trash2, MapPin, ArrowUp, ArrowDown, Eye, Share2, Users, Home, TrendingUp, ArrowDownAZ } from "lucide-react";
+import {
+  Pencil, Trash2, MapPin, ArrowUp, ArrowDown, Eye, Share2,
+  Users, Home, TrendingUp, Search,
+} from "lucide-react";
 import { REGIONS, matchesSidoFilter } from "@/constants/regions";
 import {
   fetchAllDestinations,
   deleteDestinationById,
-  fetchDashboardStats,
-  STATS_PERIOD_LABELS,
-  type DashboardStats,
-  type StatsPeriod,
+  fetchRangeAnalytics,
+  type RangeAnalytics,
 } from "@/lib/supabase";
 import RatingFilter from "@/components/RatingFilter";
+import TrendChart from "@/components/TrendChart";
 import type { Destination } from "@/lib/db/schema";
+import { hangulIncludes } from "@/lib/tag-utils";
 
-type SortKey = "title" | "region" | "createdAt";
+type SortKey = "number" | "title" | "region" | "createdAt" | "views" | "shares";
 type SortDir = "asc" | "desc";
 
 function formatDate(iso: string | undefined) {
@@ -30,15 +33,40 @@ function formatDate(iso: string | undefined) {
   });
 }
 
+/** Date → YYYY-MM-DD (로컬) */
+function toDateInput(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function daysAgo(n: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return toDateInput(d);
+}
+
+const RANGE_PRESETS = [
+  { label: "최근 7일", days: 6 },
+  { label: "최근 14일", days: 13 },
+  { label: "최근 30일", days: 29 },
+  { label: "최근 90일", days: 89 },
+];
+
 export default function AdminDashboardPage() {
   const [items, setItems] = useState<Destination[]>([]);
-  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [analytics, setAnalytics] = useState<RangeAnalytics | null>(null);
+  const [loadingStats, setLoadingStats] = useState(false);
+
+  const [search, setSearch] = useState("");
   const [sidoFilter, setSidoFilter] = useState("");
   const [ratingFilter, setRatingFilter] = useState<number[]>([]);
-  const [sortByName, setSortByName] = useState(false);
-  const [sortKey, setSortKey] = useState<SortKey>("createdAt");
-  const [sortDir, setSortDir] = useState<SortDir>("desc");
-  const [statsPeriod, setStatsPeriod] = useState<StatsPeriod>("all");
+  const [sortKey, setSortKey] = useState<SortKey>("number");
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
+
+  const [fromDate, setFromDate] = useState(() => daysAgo(13));
+  const [toDate, setToDate] = useState(() => toDateInput(new Date()));
 
   const loadItems = useCallback(async () => {
     try {
@@ -54,39 +82,13 @@ export default function AdminDashboardPage() {
   }, [loadItems]);
 
   useEffect(() => {
-    fetchDashboardStats(statsPeriod)
-      .then(setStats)
-      .catch(() => setStats(null));
-  }, [statsPeriod]);
-
-  const handleSort = (key: SortKey) => {
-    if (sortKey === key) {
-      setSortDir((prev) => (prev === "asc" ? "desc" : "asc"));
-    } else {
-      setSortKey(key);
-      setSortDir("asc");
-    }
-  };
-
-  const filteredAndSorted = items
-    .filter((d) => matchesSidoFilter(d.sido, sidoFilter))
-    .filter((d) => ratingFilter.length === 0 || ratingFilter.includes(d.rating))
-    .sort((a, b) => {
-      // 가나다순 토글이 켜져 있으면 우선 적용
-      if (sortByName) {
-        return (a.title ?? "").localeCompare(b.title ?? "");
-      }
-      // 테이블 헤더 정렬
-      let cmp = 0;
-      if (sortKey === "title") {
-        cmp = (a.title ?? "").localeCompare(b.title ?? "");
-      } else if (sortKey === "region") {
-        cmp = `${a.sido} ${a.sigungu}`.localeCompare(`${b.sido} ${b.sigungu}`);
-      } else {
-        cmp = (a.createdAt ?? "").localeCompare(b.createdAt ?? "");
-      }
-      return sortDir === "asc" ? cmp : -cmp;
-    });
+    if (!fromDate || !toDate || fromDate > toDate) return;
+    setLoadingStats(true);
+    fetchRangeAnalytics(fromDate, toDate)
+      .then(setAnalytics)
+      .catch(() => setAnalytics(null))
+      .finally(() => setLoadingStats(false));
+  }, [fromDate, toDate]);
 
   // 등록일 오름차순 기준 고유 번호 (필터와 무관하게 유지)
   const postNumberMap = useMemo(() => {
@@ -98,6 +100,45 @@ export default function AdminDashboardPage() {
     return map;
   }, [items]);
 
+  const handleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDir((prev) => (prev === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      // 수치형은 큰 값 우선, 그 외는 오름차순 기본
+      setSortDir(key === "views" || key === "shares" ? "desc" : "asc");
+    }
+  };
+
+  const statFor = useCallback(
+    (id: string) => analytics?.destStats[id] ?? { views: 0, shares: 0 },
+    [analytics]
+  );
+
+  const filteredAndSorted = useMemo(() => {
+    return items
+      .filter((d) => hangulIncludes(d.title, search))
+      .filter((d) => matchesSidoFilter(d.sido, sidoFilter))
+      .filter((d) => ratingFilter.length === 0 || ratingFilter.includes(d.rating))
+      .sort((a, b) => {
+        let cmp = 0;
+        if (sortKey === "number") {
+          cmp = (postNumberMap.get(a.id) ?? 0) - (postNumberMap.get(b.id) ?? 0);
+        } else if (sortKey === "title") {
+          cmp = (a.title ?? "").localeCompare(b.title ?? "");
+        } else if (sortKey === "region") {
+          cmp = `${a.sido} ${a.sigungu}`.localeCompare(`${b.sido} ${b.sigungu}`);
+        } else if (sortKey === "createdAt") {
+          cmp = (a.createdAt ?? "").localeCompare(b.createdAt ?? "");
+        } else if (sortKey === "views") {
+          cmp = statFor(a.id).views - statFor(b.id).views;
+        } else {
+          cmp = statFor(a.id).shares - statFor(b.id).shares;
+        }
+        return sortDir === "asc" ? cmp : -cmp;
+      });
+  }, [items, search, sidoFilter, ratingFilter, sortKey, sortDir, statFor, postNumberMap]);
+
   const handleDelete = async (id: string, title: string) => {
     if (!confirm(`정말 삭제하시겠습니까?\n\n"${title}"`)) return;
     try {
@@ -108,67 +149,102 @@ export default function AdminDashboardPage() {
     }
   };
 
+  const applyPreset = (days: number) => {
+    setFromDate(daysAgo(days));
+    setToDate(toDateInput(new Date()));
+  };
+
   const STAT_CARDS = [
     {
-      label: "전체 방문",
-      value: stats?.totalViews ?? "-",
+      label: "전체 조회",
+      value: analytics?.totalViews ?? "-",
       icon: Users,
       color: "bg-blue-50 text-blue-600",
       border: "border-blue-100",
     },
     {
       label: "게시글 조회",
-      value: stats?.detailPageViews ?? "-",
+      value: analytics?.detailViews ?? "-",
       icon: TrendingUp,
       color: "bg-emerald-50 text-emerald-600",
       border: "border-emerald-100",
     },
     {
       label: "공유 횟수",
-      value: stats?.totalShares ?? "-",
+      value: analytics?.totalShares ?? "-",
       icon: Share2,
       color: "bg-purple-50 text-purple-600",
       border: "border-purple-100",
     },
     {
       label: "메인 방문",
-      value: stats?.mainPageViews ?? "-",
+      value: analytics?.mainViews ?? "-",
       icon: Home,
       color: "bg-amber-50 text-amber-600",
       border: "border-amber-100",
     },
   ];
 
+  const sortIcon = (key: SortKey) =>
+    sortKey === key ? (
+      sortDir === "asc" ? (
+        <ArrowUp className="w-3.5 h-3.5" />
+      ) : (
+        <ArrowDown className="w-3.5 h-3.5" />
+      )
+    ) : null;
+
   return (
     <div className="max-w-5xl mx-auto px-4 py-8">
-      <h1 className="text-xl font-semibold text-slate-800 mb-2">
-        게시글 관리
-      </h1>
+      <h1 className="text-xl font-semibold text-slate-800 mb-2">게시글 관리</h1>
       <p className="text-sm text-slate-500 mb-6">
         전체 {items.length.toLocaleString()}건
-        {statsPeriod !== "all" && ` · ${STATS_PERIOD_LABELS[statsPeriod]} 통계`}
       </p>
 
-      {/* 통계 기간 선택 */}
-      <div className="flex flex-wrap gap-2 mb-4">
-        {(Object.keys(STATS_PERIOD_LABELS) as StatsPeriod[]).map((key) => (
-          <button
-            key={key}
-            type="button"
-            onClick={() => setStatsPeriod(key)}
-            className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
-              statsPeriod === key
-                ? "bg-slate-800 border-slate-800 text-white"
-                : "bg-white border-slate-200 text-slate-600 hover:border-slate-300"
-            }`}
-          >
-            {STATS_PERIOD_LABELS[key]}
-          </button>
-        ))}
+      {/* ── 통계 기간 선택 ── */}
+      <div className="rounded-xl border border-slate-200 bg-white p-4 mb-4">
+        <div className="flex flex-wrap items-end gap-3">
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1.5">시작일</label>
+            <input
+              type="date"
+              value={fromDate}
+              max={toDate}
+              onChange={(e) => setFromDate(e.target.value)}
+              className="px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-slate-200"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1.5">종료일</label>
+            <input
+              type="date"
+              value={toDate}
+              min={fromDate}
+              max={toDateInput(new Date())}
+              onChange={(e) => setToDate(e.target.value)}
+              className="px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-slate-200"
+            />
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {RANGE_PRESETS.map((p) => (
+              <button
+                key={p.label}
+                type="button"
+                onClick={() => applyPreset(p.days)}
+                className="px-3 py-2 text-sm rounded-lg border bg-white border-slate-200 text-slate-600 hover:border-slate-300 transition-colors"
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+          {loadingStats && (
+            <span className="text-xs text-slate-400 pb-2">불러오는 중…</span>
+          )}
+        </div>
       </div>
 
-      {/* 통계 카드 */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
+      {/* ── 통계 카드 ── */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
         {STAT_CARDS.map(({ label, value, icon: Icon, color, border }) => (
           <div
             key={label}
@@ -187,24 +263,29 @@ export default function AdminDashboardPage() {
         ))}
       </div>
 
-      {/* 필터 & 정렬 */}
-      <div className="flex flex-wrap gap-3 mb-6 items-end">
+      {/* ── 추이 그래프 ── */}
+      <div className="rounded-xl border border-slate-200 bg-white p-4 mb-8">
+        <h2 className="text-sm font-semibold text-slate-700 mb-3">
+          기간별 추이 <span className="font-normal text-slate-400">({fromDate} ~ {toDate})</span>
+        </h2>
+        <TrendChart data={analytics?.daily ?? []} />
+      </div>
 
-        {/* 가나다순 토글 */}
+      {/* ── 필터 & 검색 ── */}
+      <div className="flex flex-wrap gap-3 mb-6 items-end">
+        {/* 검색 */}
         <div>
-          <label className="block text-xs font-medium text-slate-500 mb-1.5">정렬</label>
-          <button
-            type="button"
-            onClick={() => setSortByName((v) => !v)}
-            className={`flex items-center gap-1.5 px-3 py-2.5 text-sm border rounded-lg transition-colors ${
-              sortByName
-                ? "bg-slate-800 border-slate-800 text-white"
-                : "bg-white border-slate-200 text-slate-700 hover:border-slate-300"
-            }`}
-          >
-            <ArrowDownAZ className="w-4 h-4" />
-            가나다순
-          </button>
+          <label className="block text-xs font-medium text-slate-500 mb-1.5">제목 검색</label>
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <input
+              type="search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="제목 검색"
+              className="pl-10 pr-4 py-2.5 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-slate-300 w-56"
+            />
+          </div>
         </div>
 
         {/* 별점 복수 필터 */}
@@ -233,87 +314,72 @@ export default function AdminDashboardPage() {
 
         <div className="flex items-end pb-0.5">
           <p className="text-xs text-slate-400">
-            테이블 헤더(제목·지역·등록일) 클릭으로 추가 정렬 가능
+            표 헤더(No.·제목·지역·등록일·조회·공유) 클릭으로 정렬
           </p>
         </div>
       </div>
 
-      {/* 테이블 */}
+      {/* ── 테이블 ── */}
       <div className="border border-slate-200 rounded-lg overflow-hidden">
         {filteredAndSorted.length === 0 ? (
           <div className="py-16 text-center text-slate-500">
-            등록된 게시글이 없습니다.
-            <Link
-              href="/admin/write"
-              className="block mt-2 text-slate-700 font-medium hover:underline"
-            >
-              새 글 등록하기 →
-            </Link>
+            {items.length === 0 ? (
+              <>
+                등록된 게시글이 없습니다.
+                <Link
+                  href="/admin/write"
+                  className="block mt-2 text-slate-700 font-medium hover:underline"
+                >
+                  새 글 등록하기 →
+                </Link>
+              </>
+            ) : (
+              "조건에 맞는 게시글이 없습니다."
+            )}
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200">
-                  <th className="text-center py-3 px-3 font-medium text-slate-700 w-12">
-                    No.
+                  <th
+                    onClick={() => handleSort("number")}
+                    className="text-center py-3 px-3 font-medium text-slate-700 w-14 cursor-pointer hover:bg-slate-100 transition-colors select-none"
+                  >
+                    <span className="inline-flex items-center gap-1">No. {sortIcon("number")}</span>
                   </th>
                   <th
                     onClick={() => handleSort("title")}
                     className="text-left py-3 px-4 font-medium text-slate-700 cursor-pointer hover:bg-slate-100 transition-colors select-none"
                   >
-                    <span className="inline-flex items-center gap-1">
-                      제목
-                      {sortKey === "title" &&
-                        (sortDir === "asc" ? (
-                          <ArrowUp className="w-3.5 h-3.5" />
-                        ) : (
-                          <ArrowDown className="w-3.5 h-3.5" />
-                        ))}
-                    </span>
+                    <span className="inline-flex items-center gap-1">제목 {sortIcon("title")}</span>
                   </th>
                   <th
                     onClick={() => handleSort("region")}
                     className="text-left py-3 px-4 font-medium text-slate-700 cursor-pointer hover:bg-slate-100 transition-colors select-none"
                   >
-                    <span className="inline-flex items-center gap-1">
-                      지역
-                      {sortKey === "region" &&
-                        (sortDir === "asc" ? (
-                          <ArrowUp className="w-3.5 h-3.5" />
-                        ) : (
-                          <ArrowDown className="w-3.5 h-3.5" />
-                        ))}
-                    </span>
+                    <span className="inline-flex items-center gap-1">지역 {sortIcon("region")}</span>
                   </th>
                   <th
                     onClick={() => handleSort("createdAt")}
                     className="text-left py-3 px-4 font-medium text-slate-700 cursor-pointer hover:bg-slate-100 transition-colors select-none"
                   >
-                    <span className="inline-flex items-center gap-1">
-                      등록일
-                      {sortKey === "createdAt" &&
-                        (sortDir === "asc" ? (
-                          <ArrowUp className="w-3.5 h-3.5" />
-                        ) : (
-                          <ArrowDown className="w-3.5 h-3.5" />
-                        ))}
-                    </span>
+                    <span className="inline-flex items-center gap-1">등록일 {sortIcon("createdAt")}</span>
                   </th>
-                  <th className="text-left py-3 px-4 font-medium text-slate-700">
-                    평점
+                  <th className="text-left py-3 px-4 font-medium text-slate-700">평점</th>
+                  <th
+                    onClick={() => handleSort("views")}
+                    className="text-left py-3 px-4 font-medium text-slate-700 cursor-pointer hover:bg-slate-100 transition-colors select-none w-24"
+                  >
+                    <span className="inline-flex items-center gap-1">조회수 {sortIcon("views")}</span>
                   </th>
-                  <th className="text-left py-3 px-4 font-medium text-slate-700 w-28">
-                    조회 / 공유
-                    {statsPeriod !== "all" && (
-                      <span className="block text-[10px] font-normal text-slate-400 mt-0.5">
-                        {STATS_PERIOD_LABELS[statsPeriod]}
-                      </span>
-                    )}
+                  <th
+                    onClick={() => handleSort("shares")}
+                    className="text-left py-3 px-4 font-medium text-slate-700 cursor-pointer hover:bg-slate-100 transition-colors select-none w-24"
+                  >
+                    <span className="inline-flex items-center gap-1">공유수 {sortIcon("shares")}</span>
                   </th>
-                  <th className="text-right py-3 px-4 font-medium text-slate-700 w-40">
-                    작업
-                  </th>
+                  <th className="text-right py-3 px-4 font-medium text-slate-700 w-40">작업</th>
                 </tr>
               </thead>
               <tbody>
@@ -336,19 +402,18 @@ export default function AdminDashboardPage() {
                     <td className="py-3 px-4 text-slate-600">
                       {row.sido} {row.sigungu}
                     </td>
-                    <td className="py-3 px-4 text-slate-600">
-                      {formatDate(row.createdAt)}
-                    </td>
+                    <td className="py-3 px-4 text-slate-600">{formatDate(row.createdAt)}</td>
                     <td className="py-3 px-4 text-slate-700">{row.rating}점</td>
-                    <td className="py-3 px-4">
-                      <span className="inline-flex items-center gap-1 text-sm text-slate-500">
-                        <Eye className="w-3.5 h-3.5" />
-                        {(stats?.destStats[row.id]?.views ?? 0).toLocaleString()}
+                    <td className="py-3 px-4 text-slate-600">
+                      <span className="inline-flex items-center gap-1">
+                        <Eye className="w-3.5 h-3.5 text-slate-400" />
+                        {statFor(row.id).views.toLocaleString()}
                       </span>
-                      <span className="mx-1 text-slate-300">/</span>
-                      <span className="inline-flex items-center gap-1 text-sm text-slate-500">
-                        <Share2 className="w-3.5 h-3.5" />
-                        {(stats?.destStats[row.id]?.shares ?? 0).toLocaleString()}
+                    </td>
+                    <td className="py-3 px-4 text-slate-600">
+                      <span className="inline-flex items-center gap-1">
+                        <Share2 className="w-3.5 h-3.5 text-slate-400" />
+                        {statFor(row.id).shares.toLocaleString()}
                       </span>
                     </td>
                     <td className="py-3 px-4 text-right">

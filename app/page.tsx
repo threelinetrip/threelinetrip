@@ -21,7 +21,7 @@ import {
 import { getRatingLabel } from "@/constants/rating";
 import TagChip, { getColors } from "@/components/TagChip";
 import type { Destination, Tag } from "@/lib/db/schema";
-import { tagStringLabel, tagColorFromUnknown, safeLower } from "@/lib/tag-utils";
+import { tagStringLabel, tagColorFromUnknown, hangulIncludes } from "@/lib/tag-utils";
 
 // ─────────────────────────────────────────────
 // 별점 표시
@@ -229,7 +229,7 @@ function SearchBox({
       <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
       <input
         type="search"
-        placeholder={TAGS_VISIBLE ? "제목, 지역, 태그 검색" : "제목, 지역 검색"}
+        placeholder="제목 검색"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         className="h-9 w-full pl-9 pr-3 text-sm border border-slate-100 rounded-lg bg-white
@@ -444,16 +444,9 @@ export default function Home() {
   const filteredAndSorted = useMemo(() => {
     let result = [...destinations];
 
-    // 검색: 제목 · 지역 · 요약 · 태그명
+    // 검색: 제목만 (한글 부분 음절 매칭 — "도"로 "동해"도 검색)
     if (search.trim()) {
-      const q = safeLower(search.trim());
-      result = result.filter(
-        (d) =>
-          safeLower(d.title).includes(q) ||
-          safeLower(d.summary).includes(q) ||
-          safeLower(`${d.sido ?? ""} ${d.sigungu ?? ""}`).includes(q) ||
-          (d.tags ?? []).some((t) => safeLower(tagStringLabel(t)).includes(q))
-      );
+      result = result.filter((d) => hangulIncludes(d.title, search));
     }
 
     if (sido)    result = result.filter((d) => matchesSidoFilter(d.sido, sido));

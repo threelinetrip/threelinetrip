@@ -540,3 +540,123 @@ export async function fetchDashboardStats(
     destStats,
   };
 }
+
+// ──────────────────────────────────────────────
+// 날짜 범위 기반 상세 통계 (추이 그래프용)
+// ──────────────────────────────────────────────
+
+/** 하루 단위 집계 */
+export interface DailyStat {
+  date: string; // YYYY-MM-DD (로컬 기준)
+  mainViews: number;
+  detailViews: number;
+  shares: number;
+}
+
+export interface RangeAnalytics {
+  /** 전체 조회수 (메인 + 게시글) */
+  totalViews: number;
+  /** 게시글 조회수 */
+  detailViews: number;
+  /** 메인 방문수 */
+  mainViews: number;
+  /** 공유 횟수 */
+  totalShares: number;
+  /** 게시글별 { views, shares } */
+  destStats: Record<string, { views: number; shares: number }>;
+  /** 일자별 추이 (범위 내 모든 날짜, 데이터 없는 날은 0) */
+  daily: DailyStat[];
+}
+
+/** Date → 로컬 YYYY-MM-DD */
+function toLocalDateKey(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/**
+ * 지정 날짜 범위(로컬, 양끝 포함)의 조회·공유 로그를 집계
+ * - fromDate / toDate: "YYYY-MM-DD"
+ */
+export async function fetchRangeAnalytics(
+  fromDate: string,
+  toDate: string
+): Promise<RangeAnalytics> {
+  const start = new Date(`${fromDate}T00:00:00`);
+  const end = new Date(`${toDate}T23:59:59.999`);
+
+  // 범위 내 모든 날짜 버킷 초기화 (0으로 채움)
+  const buckets = new Map<string, DailyStat>();
+  for (
+    let d = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+    d <= end;
+    d.setDate(d.getDate() + 1)
+  ) {
+    const key = toLocalDateKey(d);
+    buckets.set(key, { date: key, mainViews: 0, detailViews: 0, shares: 0 });
+  }
+
+  const destStats: Record<string, { views: number; shares: number }> = {};
+  let totalViews = 0;
+  let detailViews = 0;
+  let mainViews = 0;
+  let totalShares = 0;
+
+  // 페이지네이션으로 전체 로그 수집 (기본 1000행 제한 대응)
+  const PAGE = 1000;
+  for (let offset = 0; ; offset += PAGE) {
+    const { data, error } = await supabase
+      .from("view_logs")
+      .select("created_at, event_type, destination_id")
+      .gte("created_at", start.toISOString())
+      .lte("created_at", end.toISOString())
+      .order("created_at", { ascending: true })
+      .range(offset, offset + PAGE - 1);
+
+    if (error) {
+      console.warn("[fetchRangeAnalytics 실패]", toErrorMessage(error));
+      break;
+    }
+    const rows = data ?? [];
+    for (const row of rows) {
+      const created = row.created_at ? new Date(String(row.created_at)) : null;
+      if (!created) continue;
+      const key = toLocalDateKey(created);
+      const bucket = buckets.get(key);
+      const destId = row.destination_id ? String(row.destination_id) : null;
+      const isShare = row.event_type === "share";
+
+      if (isShare) {
+        totalShares++;
+        if (bucket) bucket.shares++;
+        if (destId) {
+          destStats[destId] ??= { views: 0, shares: 0 };
+          destStats[destId].shares++;
+        }
+      } else {
+        totalViews++;
+        if (destId) {
+          detailViews++;
+          if (bucket) bucket.detailViews++;
+          destStats[destId] ??= { views: 0, shares: 0 };
+          destStats[destId].views++;
+        } else {
+          mainViews++;
+          if (bucket) bucket.mainViews++;
+        }
+      }
+    }
+    if (rows.length < PAGE) break;
+  }
+
+  return {
+    totalViews,
+    detailViews,
+    mainViews,
+    totalShares,
+    destStats,
+    daily: Array.from(buckets.values()),
+  };
+}
