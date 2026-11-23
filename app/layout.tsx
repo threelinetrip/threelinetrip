@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Noto_Sans_KR } from "next/font/google";
 import "./globals.css";
 import Header from "@/components/Header";
+import { SITE_URL } from "@/constants/site";
 
 const notoSansKR = Noto_Sans_KR({
   subsets: ["latin"],
@@ -9,7 +10,6 @@ const notoSansKR = Noto_Sans_KR({
   variable: "--font-noto-sans-kr",
 });
 
-const SITE_URL = "https://www.thlt.kr";
 const TITLE = "어디 갈까 고민일 땐 세줄여행";
 const DESCRIPTION = "세 줄로 만나는 여행지";
 const OG_IMAGE = `${SITE_URL}/og-image.jpg`;
