@@ -57,7 +57,7 @@
    - `fetchAllTags()`: 행 단위로 태그를 훑어 고유 `name` 기준 맵에 색상 병합.
 2. **`lib/tag-utils.ts`**
    - UI·필터·자동완성은 가능한 한 **`tagStringLabel` / `normalizeTagArray` / `safeLower`** 경로만 사용.
-3. **`app/page.tsx`**
+3. **`components/home/HomeClient.tsx`** (메인 목록·필터)
    - 검색·태그 필터는 `safeLower` + `tagStringLabel` 기준.
 
 이렇게 해서 DB에 옛 `text[]` 데이터가 남아 있거나, 중간 형태가 섞여 있어도 **클라이언트에서 크래시 없이** 동작하도록 맞춰 둔 상태입니다.
@@ -224,7 +224,11 @@ git push origin main   # 실제 브랜치명에 맞게 수정
 | `lib/tag-utils.ts` | 태그 문자열화·정규화·안전 소문자 |
 | `lib/db/schema.ts` | `Tag`, `Destination` 타입 |
 | `lib/auth.ts` | 관리자 이메일, 로그인 헬퍼 |
-| `app/page.tsx` | 메인 목록·필터·검색 |
+| `lib/server/destinations.ts` | 서버 컴포넌트용 읽기 전용 조회 (`getAllDestinations`, `getDestinationById`) |
+| `app/page.tsx` | 메인 (서버). 목록을 조회해 `HomeClient`에 전달, canonical |
+| `components/home/HomeClient.tsx` | 메인 목록·필터·검색·스크롤 복원 (클라이언트) |
+| `app/destination/[id]/page.tsx` | 상세 (서버). `generateMetadata`, JSON-LD, 없는 id는 404 |
+| `components/destination/*` | 상세의 클라이언트 부분: 슬라이더·라이트박스, 평점 팝오버, 공유·뒤로가기, 조회 로그 |
 | `app/admin/write/page.tsx` | 글 작성/수정, 태그 입력, 미디어 |
 | `components/TagChip.tsx` | 태그 칩 UI, 팔레트, `getColors` |
 
