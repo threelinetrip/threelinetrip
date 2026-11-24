@@ -19,8 +19,27 @@ interface PageProps {
   params: Promise<{ id: string }>;
 }
 
+// 구글 검색 결과에 description이 잘리지 않고 노출되는 대략적인 길이
+const DESCRIPTION_MAX = 150;
+
 function getSummaryLines(d: Destination): string[] {
   return d.summary.split("\n").map((l) => l.trim()).filter(Boolean);
+}
+
+/** "장수동 은행나무 - 인천광역시 남동구" (지역이 비어 있으면 이름만) */
+function buildPageTitle(d: Destination): string {
+  const region = [d.sido, d.sigungu].map((s) => s.trim()).filter(Boolean).join(" ");
+  return region ? `${d.title} - ${region}` : d.title;
+}
+
+/** 최대 길이를 넘으면 단어 경계에서 자르고 "…"를 붙인다 */
+function truncateAtWord(text: string, max: number): string {
+  if (text.length <= max) return text;
+  const cut = text.slice(0, max);
+  const lastSpace = cut.lastIndexOf(" ");
+  // 공백이 너무 앞에 있으면(긴 단어) 그냥 글자 수로 자른다
+  const end = lastSpace > max * 0.6 ? lastSpace : max;
+  return `${cut.slice(0, end).trimEnd()}…`;
 }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
@@ -29,14 +48,15 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   if (!d) return {};
 
   const url = `${SITE_URL}/destination/${d.id}`;
-  const description = getSummaryLines(d).join(" ");
-  const fullTitle = `${d.title} | ${SITE_NAME}`;
+  const description = truncateAtWord(getSummaryLines(d).join(" "), DESCRIPTION_MAX);
+  const pageTitle = buildPageTitle(d);
+  const fullTitle = `${pageTitle} | ${SITE_NAME}`;
   const images = pickShareableImages(d.imageUrls);
   const ogImage = images[0] ?? DEFAULT_OG_IMAGE;
 
   // openGraph·twitter는 layout 값과 병합되지 않고 통째로 대체되므로 모든 필드를 다시 적는다
   return {
-    title: d.title,
+    title: pageTitle,
     description,
     alternates: { canonical: url },
     openGraph: {
